@@ -164,7 +164,9 @@ def anonymize(probes: list[Probe], results: list[RunResult]) -> tuple[list[Probe
     return anon, runs
 
 
-def render_eval_html(probes: list[Probe], results: list[RunResult], model: str, title: str = "CLAUDE.md compaction") -> str:
+def render_eval_html(probes: list[Probe], results: list[RunResult], model: str, title: str = "CLAUDE.md compaction",
+                     summary_only: bool = False) -> str:
+    """summary_only leaves out the per-probe chart and table: headline numbers and paired counts only."""
     b, a = _summary(results, "before"), _summary(results, "after")
     reps = max((r.rep for r in results), default=0) + 1
     pairs = defaultdict(dict)
@@ -199,6 +201,14 @@ def render_eval_html(probes: list[Probe], results: list[RunResult], model: str, 
     ])
     legend = ('<div class="legend"><span><i class="sw m-before"></i>Before (original CLAUDE.md)</span>'
               '<span><i class="sw m-after"></i>After (compacted)</span></div>')
+    if summary_only:
+        per_probe = '<p class="hint">Every probe ran on both versions and was graded blind. Each run is paired with the same probe and run on the other version.</p>'
+        table = ""
+    else:
+        per_probe = ('<p class="hint">Share of runs that passed, per probe. A single dot means both versions scored the same; '
+                     "a line shows the gap.\nProbes are grouped by what the compaction did to the rule they test.</p>\n"
+                     f'{legend}\n<div class="card scroll dumbbell">{_dumbbell(probes, results)}</div>')
+        table = f'<details><summary>Table view</summary><div class="scroll">{_table(probes, results)}</div></details>'
     sub = (f"{len(probes)} rule probes × {reps} run{'s' if reps > 1 else ''} × 2 variants on {model}. "
            f"Each run is a fresh headless Claude Code session in a throwaway worktree; a blind judge grades it.")
     return f"""<!doctype html>
@@ -263,17 +273,14 @@ h1 {{ overflow-wrap: anywhere; }}
 <div class="panels">{panels}</div>
 
 <h2>Are the rules still followed?</h2>
-<p class="hint">Share of runs that passed, per probe. A single dot means both versions scored the same; a line shows the gap.
-Probes are grouped by what the compaction did to the rule they test.</p>
-{legend}
-<div class="card scroll dumbbell">{_dumbbell(probes, results)}</div>
+{per_probe}
 <div class="pairs">
   <div class="card"><b>{both}</b><span>run pairs pass in both</span></div>
   <div class="card"><b>{only_b}</b><span>pass only before</span></div>
   <div class="card"><b>{only_a}</b><span>pass only after</span></div>
   <div class="card"><b>{neither}</b><span>fail in both</span></div>
 </div>
-<details><summary>Table view</summary><div class="scroll">{_table(probes, results)}</div></details>
+{table}
 </main>
 <div id="tip" role="tooltip"></div>
 <script>

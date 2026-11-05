@@ -152,7 +152,8 @@ def _eval_report(args: argparse.Namespace) -> int:
     Path(args.html).parent.mkdir(parents=True, exist_ok=True)
     if args.anonymize:
         probes, results = anonymize(probes, results)
-    Path(args.html).write_text(render_eval_html(probes, results, args.model), encoding="utf-8")
+    Path(args.html).write_text(render_eval_html(probes, results, args.model, summary_only=args.summary_only),
+                               encoding="utf-8")
     print(eval_report(probes, results, args.model).split("## Probes")[0].rstrip())
     print(f"\nHTML report written to {args.html}")
     return 0
@@ -223,6 +224,7 @@ def main(argv: list[str] | None = None) -> int:
     rp.add_argument("--html", default="report.html")
     rp.add_argument("--anonymize", action="store_true",
                     help="label probes Rule 01, Rule 02, … and drop all rule text, answers and file names")
+    rp.add_argument("--summary-only", action="store_true", help="leave out the per-probe chart and table")
     rp.set_defaults(func=_eval_report)
 
     args = parser.parse_args(argv)

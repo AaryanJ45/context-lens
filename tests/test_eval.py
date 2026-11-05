@@ -157,3 +157,14 @@ def test_anonymize_strips_all_rule_text():
     for secret in ("billing", "Billing", "Auth", "auth.py", "Never call", "Secret"):
         assert secret not in page
     assert "Rule 01" in page and "Rule 02" in page
+
+
+def test_summary_only_leaves_out_per_probe_chart():
+    from context_lens.eval_html import render_eval_html
+
+    probes = [Probe("p0", "s0", "T", "move", "A secret rule", "do", ["a"], "r", "o")]
+    results = [RunResult("p0", "before", 0, startup_tokens=10, passed=True),
+               RunResult("p0", "after", 0, startup_tokens=5, passed=True)]
+    full, short = render_eval_html(probes, results, "m"), render_eval_html(probes, results, "m", summary_only=True)
+    assert "A secret rule" in full and "A secret rule" not in short and "Table view" not in short
+    assert "run pairs pass in both" in short

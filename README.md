@@ -15,7 +15,7 @@ Run on a production repo whose root `CLAUDE.md` had grown past 100 KB:
 `compact` proposed a slim root file plus five path-scoped rule files, and
 `eval` ran 29 rule probes × 3 runs × 2 variants (174 headless sessions on
 Sonnet 5.5). Rule names are withheld; the chart below is generated with
-`context-lens eval report --anonymize`.
+`context-lens eval report --anonymize --summary-only`.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/eval-dark.png">
