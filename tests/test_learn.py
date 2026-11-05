@@ -103,3 +103,18 @@ def test_add_rules_goes_into_its_own_section_once(tmp_path: Path):
     assert add_rules(lessons, [1], repo, home=home) == {}  # already there
     add_rules(lessons, [1], repo, to="local", home=home)
     assert "- Use pnpm, not npm." in (repo / "CLAUDE.local.md").read_text()
+
+
+def test_best_examples_prefer_clear_corrections_over_redirections():
+    from context_lens.activity import Correction
+    from context_lens.learn import action_label, best_examples
+
+    cs = [Correction("interrupted", "Also is there an actual difference with this?", []),
+          Correction("pushback", "Wait I really like number 1, lets build that", []),
+          Correction("pushback", "don't run jest locally, CI does it", ["USER: go", "Bash: npx jest"]),
+          Correction("rejected", "never push to main", ["Bash: git push origin main"]),
+          Correction("rejected", "", ["Bash: rm -rf x"]),
+          Correction("pushback", "don't run jest locally, CI does it!", [])]
+    picked = [c.said for c in best_examples(cs, 5)]
+    assert picked == ["never push to main", "don't run jest locally, CI does it"]
+    assert action_label("USER: go") == "" and action_label("  -> user rejected Bash") == "user rejected Bash"

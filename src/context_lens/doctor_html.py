@@ -31,7 +31,7 @@ def _command(cmd: str) -> str:
 
 def _learn_cta(doc: Doctor) -> str:
     """After a plain checkup, point at --learn when there are corrections to learn from."""
-    from .learn import gather
+    from .learn import action_label, best_examples, gather
 
     if doc.lessons:
         return ""
@@ -39,14 +39,22 @@ def _learn_cta(doc: Doctor) -> str:
     if not found:
         return ""
     sessions = len({c.session_id for c in found})
-    quotes = "".join([f"<li>\u201c{_e(c.said[:140])}\u201d</li>" for c in found if c.said][:3])
+    kind_label = {"rejected": "You rejected", "interrupted": "You stopped Claude", "pushback": "You pushed back"}
+    rows = []
+    for c in best_examples(found, 5):
+        did = next((x for x in reversed([action_label(b) for b in c.before]) if x), "")
+        rows.append(
+            f"<li><div class=said>\u201c{_e(c.said[:180])}\u201d</div><div class=muted>{kind_label[c.kind]}"
+            f"{' after Claude ran <code>' + _e(did[:110]) + '</code>' if did else ''}"
+            f"{' · ' + c.when.strftime('%b %-d') if c.when else ''}</div></li>")
+    quotes = "".join(rows)
     return (
         "<section class=cta><div class=label>Next step</div>"
         f"<h2>You corrected Claude {len(found)} times in {sessions} sessions</h2>"
         "<p>Each time you rejected an action, interrupted, or said \u201cno, don\u2019t\u2026\u201d, you stated a rule "
         "your CLAUDE.md doesn\u2019t have. <b>--learn</b> groups the ones you repeat, writes the missing rules, and "
         "flags any of your instructions that say the opposite.</p>"
-        f"<ul class=quotes>{quotes}</ul>"
+        f"<p class=muted>Some of what you told Claude:</p><ul class=quotes>{quotes}</ul>"
         f"{_command('context-lens doctor --learn')}"
         f"<p class=muted>Run it in {_e(doc.profile.repo)}. One model call, about $0.25. It sends your redacted "
         "correction words and the action before each, never tool output or file contents. To see exactly what "
