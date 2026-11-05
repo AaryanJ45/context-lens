@@ -115,7 +115,14 @@ written to `.context-lens/` in the repo; add it to `.gitignore`.
 It prints one line per area and a ranked list of fixes, each with the evidence
 behind it, then **opens `.context-lens/doctor.html` in your browser** (when run
 in a terminal; `--open` / `--no-open` override) and prints its `file://` link.
-`doctor.json` has the same data for scripts. Every number comes from your own files, over the last 30 days
+`doctor.json` has the same data for scripts.
+
+When the checkup finds corrections worth learning from, it asks once at the
+end of a terminal run: *"Learn rules from them? Sends redacted excerpts to a
+model, about $0.25. [y/N]"*. Answering `y` runs `--learn` right there, while
+`N` (or Enter) sends nothing. Scripts, pipes and Claude never see the question
+(`--no-input` turns it off everywhere); the HTML report shows a "Next step" card
+with the command instead. Every number comes from your own files, over the last 30 days
 (`--days`):
 
 | Area | What it measures | Where from |

@@ -79,3 +79,51 @@ def test_add_rules_needs_learn_first_then_writes(tmp_path, capsys):
     assert cli.main([str(repo), "--add-rules", "1"]) == 0
     assert "- Use pnpm, not npm." in (repo / "CLAUDE.md").read_text()
     assert cli.main([str(repo), "--add-rules", "7"]) == 2
+
+
+def _corrected_repo(tmp_path: Path) -> tuple[Path, Path]:
+    import json
+
+    repo = _repo(tmp_path)
+    projects = tmp_path / "projects" / "x"
+    projects.mkdir(parents=True)
+    recs = [{"type": "user", "cwd": str(repo.resolve()), "sessionId": "s", "timestamp": "2026-11-01T10:00:00Z",
+             "message": {"content": "start"}}]
+    for i in range(6):
+        recs += [{"type": "assistant", "cwd": str(repo.resolve()), "timestamp": "2026-11-01T10:00:00Z",
+                  "message": {"id": f"m{i}", "content": [{"type": "tool_use", "id": f"t{i}", "name": "Bash",
+                                                          "input": {"command": "npx jest"}}]}},
+                 {"type": "user", "message": {"content": "no, don't run jest locally"}}]
+    (projects / "s.jsonl").write_text("\n".join(json.dumps(r) for r in recs))
+    return repo, tmp_path / "projects"
+
+
+@pytest.mark.parametrize("answer, learned", [("y", True), ("", False)])
+def test_terminal_run_offers_learn(tmp_path, monkeypatch, capsys, opened, answer, learned):
+    repo, projects = _corrected_repo(tmp_path)
+    monkeypatch.setattr(cli.sys.stdin, "isatty", lambda: True, raising=False)
+    monkeypatch.setattr(cli.sys.stdout, "isatty", lambda: True, raising=False)
+    monkeypatch.setattr("builtins.input", lambda prompt: answer)
+    calls = []
+    monkeypatch.setattr(cli, "_learn", lambda doc, out, args: calls.append(1))
+    from context_lens import doctor
+
+    real = doctor.run_doctor
+    monkeypatch.setattr(doctor, "run_doctor", lambda repo, **kw: real(repo, projects_dir=projects, home=tmp_path, **kw))
+    assert cli.main([str(repo), "--tokens", "estimate", "--days", "10000", "--no-open"]) == 0
+    assert "You corrected Claude 6 times in 1 sessions." in capsys.readouterr().out
+    assert bool(calls) is learned
+
+
+def test_no_question_when_not_a_terminal_or_no_input(tmp_path, monkeypatch, capsys, opened):
+    repo, projects = _corrected_repo(tmp_path)
+    monkeypatch.setattr("builtins.input", lambda prompt: pytest.fail("asked a question"))
+    from context_lens import doctor
+
+    real = doctor.run_doctor
+    monkeypatch.setattr(doctor, "run_doctor", lambda repo, **kw: real(repo, projects_dir=projects, home=tmp_path, **kw))
+    assert cli.main([str(repo), "--tokens", "estimate", "--days", "10000", "--no-open"]) == 0
+    monkeypatch.setattr(cli.sys.stdin, "isatty", lambda: True, raising=False)
+    monkeypatch.setattr(cli.sys.stdout, "isatty", lambda: True, raising=False)
+    assert cli.main([str(repo), "--tokens", "estimate", "--days", "10000", "--no-open", "--no-input"]) == 0
+    assert "Learn rules from them?" not in capsys.readouterr().out
