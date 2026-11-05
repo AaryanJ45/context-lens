@@ -30,7 +30,7 @@ from .transcripts import transcript_paths
 
 FIX, LOOK, OK = "fix", "look", "ok"
 SEVERITY_ORDER = {FIX: 0, LOOK: 1, OK: 2}
-AREAS = ["Startup context", "Wasted work", "Tools and MCP", "Session health", "Rule adherence"]
+AREAS = ["Startup context", "Wasted work", "Tools and MCP", "Session health", "Corrections", "Rule adherence"]
 
 STARTUP_LOOK, STARTUP_FIX = 10_000, 25_000
 LARGE_OUTPUT_LOOK, LARGE_OUTPUT_FIX = 5_000, 20_000  # tokens per session
@@ -60,7 +60,14 @@ class Doctor:
     metrics: dict[str, dict[str, str]]
     mcp_servers: dict[str, int]
     rules: list = field(default_factory=list)  # rules.RuleResult, when --rules ran
-    privacy: str = "Local only: nothing left this machine."
+    lessons: list = field(default_factory=list)  # learn.Lesson, when --learn ran
+    sent: list[str] = field(default_factory=list)  # one line per opt-in check that called a model
+
+    @property
+    def privacy(self) -> str:
+        if not self.sent:
+            return "Local only: nothing left this machine."
+        return " ".join(self.sent) + " Everything else ran locally."
 
     def area_status(self, area: str) -> str:
         sev = [f.severity for f in self.findings if f.area == area]
@@ -295,6 +302,35 @@ def check_sessions(acts: list[SessionActivity]) -> tuple[list[Finding], dict[str
     return out, metrics
 
 
+# --- corrections -------------------------------------------------------------------
+
+CORRECTIONS_LOOK = 5
+
+
+def check_corrections(acts: list[SessionActivity]) -> tuple[list[Finding], dict[str, str]]:
+    from .learn import gather
+
+    if not acts:
+        return [], {}
+    found = gather(acts)
+    kinds = Counter(c.kind for c in found)
+    sessions = len({c.session_id for c in found})
+    metrics = {
+        "corrections": f"{len(found)} in {sessions} sessions",
+        "rejected / interrupted / pushback": f"{kinds['rejected']} / {kinds['interrupted']} / {kinds['pushback']}",
+    }
+    if len(found) < CORRECTIONS_LOOK:
+        return [], metrics
+    return [Finding(
+        "Corrections", LOOK, f"You corrected Claude {len(found)} times in {sessions} sessions",
+        "Rejected actions, interruptions and pushback (\u201cno\u201d, \u201cdon't\u201d, \u201cI told you\u201d). "
+        "Some are one-off redirections; the ones you repeat are rules your CLAUDE.md is missing.",
+        "Run `context-lens doctor --learn` to group the repeats and write the missing rules "
+        "(sends your redacted words to a model; `--learn-dry-run` shows exactly what first).",
+        None, [f"{c.kind}: \u201c{c.said[:110]}\u201d" for c in found if c.said][:TOP_EVIDENCE],
+    )], metrics
+
+
 # --- rules -----------------------------------------------------------------------
 
 def check_rules(results: list, uncheckable: int = 0) -> tuple[list[Finding], dict[str, str]]:
@@ -356,14 +392,52 @@ def run_doctor(repo: Path, days: int = 30, token_mode: str = "auto", model: str 
     metrics["Startup context"].pop("skills listed / used", None)
     f, metrics["Session health"] = check_sessions(acts)
     findings += f
+    f, metrics["Corrections"] = check_corrections(acts)
+    findings += f
     return Doctor(profile, acts, findings, metrics, servers)
 
 
-def add_rules(doc: Doctor, results: list, uncheckable: int, privacy: str) -> None:
+def add_rules(doc: Doctor, results: list, uncheckable: int, sent: str) -> None:
     f, doc.metrics["Rule adherence"] = check_rules(results, uncheckable)
     doc.findings += f
     doc.rules = results
-    doc.privacy = privacy
+    doc.sent.append(sent)
+
+
+def add_lessons(doc: Doctor, lessons: list, sent: str) -> None:
+    """Findings from --learn: one per lesson, numbered as --add-rules takes them."""
+    doc.lessons = lessons
+    doc.sent.append(sent)
+    doc.metrics.setdefault("Corrections", {})["rules learned"] = (
+        f"{sum(1 for l in lessons if not l.covered_by)} new, {sum(1 for l in lessons if l.covered_by)} already written")
+    # The local summary finding is replaced by the specific ones.
+    doc.findings = [f for f in doc.findings if not (f.area == "Corrections" and f.title.startswith("You corrected"))]
+    for n, l in enumerate(lessons, 1):
+        quotes = [f"\u201c{e['said'][:110]}\u201d" for e in l.examples if e["said"]][:3]
+        if l.conflicts_with:
+            doc.findings.append(Finding(
+                "Corrections", FIX, f"Your instructions contradict what you keep telling Claude: {l.title} ({l.count}×)",
+                f"Rule {l.conflicts_with} says the opposite of what you asked for {l.count} times, so Claude "
+                f"follows the file. What you keep saying: {l.rule}",
+                f"Change {l.conflicts_with.split(' ')[0]} to match. `context-lens doctor --add-rules {n}` would add "
+                "the new rule but leave the old one in place, so edit the old rule first.",
+                None, quotes,
+            ))
+        elif l.covered_by:
+            doc.findings.append(Finding(
+                "Corrections", LOOK, f"You keep correcting Claude on a rule you already have: {l.title} ({l.count}×)",
+                f"Your rule {l.covered_by} says this, but you still had to say it {l.count} times.",
+                "Make that rule shorter and more concrete, move it nearer the top, or enforce it with a hook.",
+                None, quotes,
+            ))
+        else:
+            where = "your personal ~/.claude/CLAUDE.md" if l.scope == "personal" else "this repo's CLAUDE.md"
+            doc.findings.append(Finding(
+                "Corrections", FIX if l.count >= 2 else LOOK, f"Add a rule: {l.title} (you said it {l.count}×)",
+                f"Suggested for {where}: {l.rule}",
+                f"`context-lens doctor --add-rules {n}` adds it. Pick several with `--add-rules 1,3`.",
+                None, quotes,
+            ))
 
 
 def render_text(doc: Doctor) -> str:
@@ -380,6 +454,16 @@ def render_text(doc: Doctor) -> str:
         lines.append(f"  {icon[doc.area_status(area)]} {area:<16} {summary}")
     if "Rule adherence" not in doc.metrics:
         lines.append("  - Rule adherence   not checked (add --rules; sends redacted excerpts to a model)")
+    if doc.lessons:
+        lines.append("")
+        lines.append(f"LEARNED FROM YOUR CORRECTIONS ({len(doc.lessons)})")
+        for n, l in enumerate(doc.lessons, 1):
+            tag = (f"contradicts {l.conflicts_with}" if l.conflicts_with else f"already in {l.covered_by}"
+                   if l.covered_by else ("personal" if l.scope == "personal" else "repo"))
+            lines.append(f"{n:>2}. [{l.count}×, {tag}] {l.rule}")
+        new = [str(n) for n, l in enumerate(doc.lessons, 1) if not l.covered_by and not l.conflicts_with]
+        if new:
+            lines.append(f"    Add them with `context-lens doctor --add-rules {','.join(new)}` (or pick some).")
     lines.append("")
     ranked = doc.ranked()
     if not ranked:
@@ -418,6 +502,7 @@ def to_json(doc: Doctor) -> str:
             for a in doc.activity
         ],
         "rules": results_to_json(doc.rules),
+        "lessons": [asdict(l) for l in doc.lessons],
         "startup": json.loads(profile_json(doc.profile)),
         "privacy": doc.privacy,
     }

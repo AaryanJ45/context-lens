@@ -5,6 +5,8 @@ on the same command, so there is nothing else to learn:
 
   context-lens doctor                     checkup, local only
   context-lens doctor --rules             + did past sessions follow your rules
+  context-lens doctor --learn             + turn what you keep correcting into rules
+  context-lens doctor --add-rules 1,3     add learned rules to CLAUDE.md
   context-lens doctor --compact           propose a slim CLAUDE.md (writes nothing into the repo)
   context-lens doctor --apply-local       use that proposal in this checkout only
   context-lens doctor --apply             write that proposal into the repo
@@ -30,7 +32,7 @@ DEFAULT_OUT = ".context-lens"
 RULES_JUDGE_MODEL = "claude-haiku-5-5"
 VERIFY_JUDGE_MODEL = "claude-sonnet-5-5"
 VERIFY_SIZES = {"quick": (10, 1), "full": (30, 3)}  # probes, runs per probe
-ACTIONS = ("compact", "apply", "apply_local", "undo_local", "local_status", "verify", "verify_report")
+ACTIONS = ("compact", "apply", "apply_local", "undo_local", "local_status", "verify", "verify_report", "add_rules")
 
 
 def _fail(msg: str, code: int = 2) -> int:
@@ -68,6 +70,10 @@ def _checkup(repo: Path, out: Path, args: argparse.Namespace) -> int:
     doc = run_doctor(repo, days=args.days, token_mode=args.tokens, model=args.count_model)
     if args.rules or args.rules_dry_run:
         code = _rules(doc, out, args)
+        if code is not None:
+            return code
+    if args.learn or args.learn_dry_run:
+        code = _learn(doc, out, args)
         if code is not None:
             return code
     out.mkdir(parents=True, exist_ok=True)
@@ -117,10 +123,68 @@ def _rules(doc, out: Path, args: argparse.Namespace) -> int | None:
     cost = f", ${u.cost_usd:.2f}" if u.cost_usd else ""
     note = f"; {failed} session(s) failed to judge" if failed else ""
     add_rules(doc, results, len(candidates) - len(rules),
-              f"Rule check sent your rule text and {len(payloads) - failed} redacted session excerpts ({sent:,} "
+              f"The rule check sent your rule text and {len(payloads) - failed} redacted session excerpts ({sent:,} "
               f"characters: prompts and one line per tool call, no tool output or file contents) to {model} via "
-              f"{backend.name} ({u.calls} calls{cost}{note}). Everything else ran locally.")
+              f"{backend.name} ({u.calls} calls{cost}{note}).")
     return None
+
+
+def _learn(doc, out: Path, args: argparse.Namespace) -> int | None:
+    """Corrections to rules. Returns an exit code to stop early, or None to carry on to the report."""
+    from .doctor import add_lessons
+    from .learn import build_prompt, gather, learn, rule_index, save, write_dry_run
+    from .llm import BackendError
+
+    corrections = gather(doc.activity)
+    if not corrections:
+        print("context-lens: nothing to learn: no corrections in this window (try a longer --days)", file=sys.stderr)
+        return None
+    rules = rule_index(doc.profile)
+    prompt, ids = build_prompt(corrections, rules)
+    if args.learn_dry_run:
+        path = out / "learn-payload.jsonl"
+        write_dry_run(prompt, path)
+        print(f"1 request ({len(ids)} corrections, {len(prompt):,} characters, redacted) written to {path}. "
+              "Nothing was sent. Read it, then run with --learn to send.")
+        return 0
+    print(f"Learning from {len(ids)} corrections on {args.model} ({len(prompt):,} redacted characters)…", file=sys.stderr)
+    try:
+        backend = _backend(args, args.model)
+        lessons = learn(backend, corrections, rules)
+    except BackendError as exc:
+        print(f"context-lens: learning skipped: {exc}", file=sys.stderr)
+        return None
+    save(lessons, out / "learn" / "lessons.json")
+    u = backend.usage
+    cost = f", ${u.cost_usd:.2f}" if u.cost_usd else ""
+    add_lessons(doc, lessons,
+                f"Learning sent {len(ids)} redacted corrections (your words and one line per action Claude took "
+                f"just before, {len(prompt):,} characters) and your rule titles to {args.model} via {backend.name} "
+                f"({u.calls} call{cost}).")
+    return None
+
+
+def _add_rules(repo: Path, out: Path, args: argparse.Namespace) -> int:
+    from .learn import add_rules, load
+
+    path = out / "learn" / "lessons.json"
+    if not path.is_file():
+        return _fail("no learned rules yet; run `context-lens doctor --learn` first")
+    lessons = load(path)
+    try:
+        picks = [int(x) for x in args.add_rules.split(",") if x.strip()]
+        written = add_rules(lessons, picks, repo, args.add_to)
+    except ValueError as exc:
+        return _fail(f"--add-rules takes lesson numbers like 1,3 ({exc})")
+    if not written:
+        print("Those rules are already there; nothing to add.")
+        return 0
+    for target, lines in written.items():
+        print(f"Added {len(lines)} rule(s) to {target}:")
+        for line in lines:
+            print(f"  {line}")
+    print("They load from the next session. Review with `git diff` before committing.")
+    return 0
 
 
 # --- compact and apply -------------------------------------------------------------
@@ -308,6 +372,8 @@ def _doctor(args: argparse.Namespace) -> int:
         return _verify(repo, out, args)
     if args.verify_report:
         return _verify_report(out, args)
+    if args.add_rules:
+        return _add_rules(repo, out, args)
     return _checkup(repo, out, args)
 
 
@@ -332,6 +398,15 @@ def build_parser() -> argparse.ArgumentParser:
                    help="write the exact redacted requests --rules would send, and send nothing")
     g.add_argument("--rules-max", type=int, default=20, help="most rules to judge (default: 20)")
     g.add_argument("--rules-sessions", type=int, default=8, help="sessions to sample (default: 8)")
+
+    g = d.add_argument_group("learn from your corrections")
+    g.add_argument("--learn", action="store_true",
+                   help="turn corrections you repeat into rules (sends your redacted words to a model)")
+    g.add_argument("--learn-dry-run", action="store_true", help="write the exact request --learn would send, and send nothing")
+    g.add_argument("--add-rules", metavar="N,M", help="add learned rules (numbers from --learn) to their CLAUDE.md")
+    g.add_argument("--add-to", choices=["repo", "local", "personal"],
+                   help="where --add-rules writes: repo CLAUDE.md, CLAUDE.local.md, or ~/.claude/CLAUDE.md "
+                        "(default: what each rule is about)")
 
     g = d.add_argument_group("shrink CLAUDE.md")
     g.add_argument("--compact", action="store_true", help="propose a slim CLAUDE.md plus on-demand rule files")

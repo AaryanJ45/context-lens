@@ -1,10 +1,19 @@
 # context-lens
 
-A checkup for Claude Code. One command reads your instruction files and your
-past sessions and tells you how efficiently Claude runs in a repo: what it
-loads before you type a word, where sessions waste tokens, which tools and
-skills sit unused, and whether Claude actually follows your `CLAUDE.md`. Then
-it ranks what to fix, and opens a visual report in your browser. When the fix
+A checkup for Claude Code that learns from your mistakes. One command reads
+your instruction files and your past sessions and tells you how efficiently
+Claude runs in a repo: what it loads before you type a word, where sessions
+waste tokens, which tools and skills sit unused, and whether Claude actually
+follows your `CLAUDE.md`. Then it ranks what to fix, and opens a visual report
+in your browser.
+
+**It learns from your corrections.** Every time you rejected an action,
+interrupted Claude or said "no, don't…", you were stating a rule your
+`CLAUDE.md` doesn't have. `--learn` finds those moments, groups the ones you
+keep repeating, and writes the missing rule. It also catches the case where
+your own instructions say the opposite of what you keep asking for, which is
+usually why Claude keeps getting it wrong. `--add-rules` writes the rules you
+pick. When the fix
 is a smaller `CLAUDE.md`, the same command writes it (`--compact`) and proves
 it still works (`--verify`).
 
@@ -89,6 +98,8 @@ Everything is `context-lens doctor` (or plain `context-lens`) plus a flag:
 context-lens doctor                     # checkup: local only, no model calls
 context-lens doctor --rules-dry-run     # write what --rules would send; send nothing
 context-lens doctor --rules             # + did past sessions follow your rules
+context-lens doctor --learn             # + turn what you keep correcting into rules
+context-lens doctor --add-rules 1,3     # add learned rules to CLAUDE.md
 context-lens doctor --compact           # propose a slim CLAUDE.md (writes nothing into the repo)
 context-lens doctor --apply-local       # use the proposal in this checkout only
 context-lens doctor --apply             # write the proposal into the repo
@@ -113,6 +124,7 @@ in a terminal; `--open` / `--no-open` override) and prints its `file://` link.
 | **Wasted work** | Tool outputs over 5k tokens that sit in context for the rest of the session, failed calls and the commands behind them, the same failing call repeated, re-reads of unchanged files | Tool calls and results in transcripts |
 | **Tools and MCP** | MCP servers configured but never called, skills listed every session but never used | `~/.claude.json`, `.mcp.json`, skill folders, transcripts |
 | **Session health** | Share of sessions that ran out of room and were compacted, peak context, context added per turn | Per-turn usage in transcripts |
+| **Corrections** | How often you rejected an action, interrupted, or pushed back, and on what; with `--learn`, the rules those corrections add up to | Rejections (with the reason you typed), interruptions, prompts that push back |
 | **Rule adherence** (`--rules`) | Whether sessions followed each rule that a log of actions can show, with the line that proves it | A model reading redacted excerpts |
 
 Each area is marked *Good*, *Worth a look* or *Fix this* from plain thresholds
@@ -163,6 +175,40 @@ subscription. A run over 8 sessions costs a few cents. Rules that never come up
 are candidates to load on demand; rules often violated are candidates to make
 shorter, more concrete, or enforced by a hook.
 
+## Learn from your corrections: `--learn`
+
+```sh
+context-lens doctor --learn-dry-run     # write the exact request; send nothing
+context-lens doctor --learn             # one model call
+context-lens doctor --add-rules 1,3     # write lessons 1 and 3
+```
+
+1. **Find corrections (local).** Three kinds, each paired with the few
+   actions Claude took just before it:
+   - **Rejected actions**, with the reason you typed when saying no. Declining
+     to answer a clarifying question doesn't count.
+   - **Interruptions**, with what you said next. A bare "continue" doesn't count.
+   - **Pushback**: prompts that open with "no", "don't", "stop", "I told you",
+     "why did you"…
+   Rejections are also no longer counted as failed tool calls, since you
+   chose them.
+2. **Group and write rules (one call, opt-in).** The model groups corrections
+   that mean the same thing. It writes a rule only for something you said twice
+   or more, or once as a general rule ("never…", "always…"). One-off
+   redirections ("also add a chart") are set aside. Each lesson says where it
+   belongs: your **personal** `~/.claude/CLAUDE.md` when it's about your
+   machine or working style, else the repo's `CLAUDE.md`. Each also says when
+   you already have the rule (then Claude isn't following it; a hook can fix
+   that) or when **an existing rule says the opposite**, which is the likeliest
+   reason Claude keeps doing it.
+3. **Add what you pick.** `--add-rules 1,3` appends those rules under one
+   "Learned from corrections" heading in each target file and skips any already
+   there. `--add-to repo|local|personal` overrides where they go (`local` is
+   your uncommitted `CLAUDE.local.md`). It never commits.
+
+The default model is `--model` (Opus 5.5). One call over a month of
+corrections costs about $0.25.
+
 ## Privacy
 
 Transcripts hold code, commands and sometimes secrets, so context-lens treats
@@ -172,6 +218,10 @@ them that way.
   sends nothing anywhere (except `count_tokens` calls in exact mode, which carry
   your instruction files, not transcripts). The report says
   "Local only: nothing left this machine."
+- **`--learn` sends your corrections, not transcripts:** your words when you
+  corrected Claude (capped at 400 characters each), the one-line actions just
+  before each (200 characters each), and the titles and first words of your
+  existing rules. It sends at most 150 corrections, all redacted as below.
 - **`--rules` sends short excerpts, not transcripts.** Per sampled session: your
   prompts and one line per tool call (the command, the file path, the search
   pattern), each line capped at 300 characters, the session capped at 12,000.
@@ -181,8 +231,8 @@ them that way.
   passwords in URLs and `NAME=value` assignments, private keys, email
   addresses, long random strings, and your home directory path. Redaction is a
   best-effort filter, so:
-- **You can read every byte first.** `--rules-dry-run` writes the exact
-  requests to `.context-lens/rules-payloads.jsonl` and sends nothing.
+- **You can read every byte first.** `--rules-dry-run` and `--learn-dry-run`
+  write the exact requests to `.context-lens/` and send nothing.
 - **The report records what was sent:** how many excerpts, how many
   characters, to which model, through which backend.
 
@@ -282,6 +332,8 @@ finishes, so a stopped run keeps what it paid for. `--anonymize` on
       visual report (replaced `profile`, `compact`, `eval` and `local`)
 - [x] `--compact`: propose a slim root `CLAUDE.md` plus on-demand rule files and
       doc pointers, with a coverage check that every original rule lands somewhere
+- [x] `--learn`: turn the corrections you repeat into rules, and flag
+      instructions that contradict them
 - [x] `--verify`: run rule-probing tasks headlessly under both versions and compare
       startup tokens, cost and rule pass rate
 - [x] Claude Code plugin wrapping the CLI

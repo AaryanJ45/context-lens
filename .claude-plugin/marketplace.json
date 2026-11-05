@@ -9,7 +9,7 @@
       "name": "context-lens",
       "source": "./plugin",
       "description": "Check how efficiently Claude Code runs in a repo and what to fix, compact CLAUDE.md into on-demand rule files with nothing lost, and prove the result still gets followed.",
-      "version": "0.3.0"
+      "version": "0.4.0"
     }
   ]
 }
