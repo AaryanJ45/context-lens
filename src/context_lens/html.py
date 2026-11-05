@@ -88,7 +88,9 @@ ol.fixes{padding-left:22px}ol.fixes li{margin:0 0 18px}.fixes .t{font-weight:600
 .bars .lbl{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.bar{height:12px;border-radius:3px;background:var(--c1)}
 .bar.bad{background:var(--c2)}
 .cta{margin:24px 0 8px;padding:18px 20px;background:var(--card);border:1px solid var(--line);border-left:4px solid var(--c1);border-radius:10px}
-.cta h2{margin:4px 0 8px}.cta p{margin:6px 0}.cta .quotes{margin:8px 0;padding-left:18px;font-size:14px;color:var(--muted);overflow-wrap:anywhere}
+.cta h2{margin:4px 0 8px}.cta p{margin:6px 0}.cta .quotes{margin:8px 0 12px;padding:0;list-style:none;display:grid;gap:8px;overflow-wrap:anywhere}
+.cta .quotes li{padding:8px 12px;border-left:3px solid var(--line);background:var(--bg);border-radius:0 8px 8px 0}
+.cta .said{font-size:15px}.cta .quotes .muted{margin-top:2px}.cta .quotes code{font-size:12px}
 .cmd{display:flex;gap:8px;align-items:center;margin:12px 0 8px;flex-wrap:wrap}
 .cmd code{font:14px ui-monospace,SFMono-Regular,Menlo,monospace;padding:8px 12px;border:1px solid var(--line);border-radius:8px;background:var(--bg)}
 .cmd button{font:inherit;font-size:13px;padding:7px 12px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--fg);cursor:pointer}.privacy{border-left:3px solid var(--c4);padding:8px 12px;background:var(--card);font-size:14px}

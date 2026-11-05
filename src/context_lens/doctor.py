@@ -308,7 +308,7 @@ CORRECTIONS_LOOK = 5
 
 
 def check_corrections(acts: list[SessionActivity]) -> tuple[list[Finding], dict[str, str]]:
-    from .learn import gather
+    from .learn import best_examples, gather
 
     if not acts:
         return [], {}
@@ -327,7 +327,7 @@ def check_corrections(acts: list[SessionActivity]) -> tuple[list[Finding], dict[
         "Some are one-off redirections; the ones you repeat are rules your CLAUDE.md is missing.",
         "Run `context-lens doctor --learn` to group the repeats and write the missing rules "
         "(sends your redacted words to a model; `--learn-dry-run` shows exactly what first).",
-        None, [f"{c.kind}: \u201c{c.said[:110]}\u201d" for c in found if c.said][:TOP_EVIDENCE],
+        None, [f"{c.kind}: \u201c{c.said[:110]}\u201d" for c in best_examples(found, TOP_EVIDENCE)],
     )], metrics
 
 

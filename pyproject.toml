@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "context-lens"
-version = "0.4.0"
+version = "0.4.1"
 description = "Check how efficiently Claude Code runs in a repo, and shrink what it loads before you type a word."
 readme = "README.md"
 license = "MIT"

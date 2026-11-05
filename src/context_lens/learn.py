@@ -95,6 +95,46 @@ def gather(acts: list[SessionActivity]) -> list[Correction]:
     return sorted(out, key=lambda c: c.when or epoch, reverse=True)
 
 
+# Words that make a correction unmistakable, and openings that make it a redirection instead.
+_STRONG = re.compile(r"\b(?:don'?t|do not|never|stop|not|no|wrong|instead|told you|said|again|shouldn'?t|"
+                     r"why did you|always|every time|without asking)\b", re.I)
+_REDIRECT = re.compile(r"^(?:also|and|can you|could you|wait|ok|okay|great|nice|cool|yeah|yes|what|how|is there)\b", re.I)
+
+
+def correction_score(c: Correction) -> int:
+    """How clearly a correction states a rule: what makes a good example to show."""
+    said = c.said.strip()
+    if not said:
+        return 0
+    score = {"rejected": 3, "pushback": 2, "interrupted": 1}.get(c.kind, 0)
+    score += 2 * min(len(_STRONG.findall(said)), 2)
+    if _REDIRECT.match(said):
+        score -= 3
+    if said.endswith("?"):
+        score -= 2
+    return score
+
+
+def best_examples(corrections: list[Correction], n: int) -> list[Correction]:
+    """The clearest corrections, one per distinct wording, newest first among equals."""
+    seen: set[str] = set()
+    out = []
+    for c in sorted(corrections, key=correction_score, reverse=True):  # stable: newest first among ties
+        key = " ".join(c.said.lower().split()[:6])
+        if correction_score(c) <= 0 or key in seen:
+            continue
+        seen.add(key)
+        out.append(c)
+        if len(out) == n:
+            break
+    return out
+
+
+def action_label(line: str) -> str:
+    """A timeline line as "what Claude did", without the user's own earlier messages."""
+    return "" if line.startswith(("USER", "[")) else line.strip().removeprefix("-> ")
+
+
 def _cut(text: str, n: int) -> str:
     text = redact(text)
     return text if len(text) <= n else text[: n - 1] + "…"
