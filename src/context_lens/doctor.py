@@ -440,6 +440,18 @@ def add_lessons(doc: Doctor, lessons: list, sent: str) -> None:
             ))
 
 
+def render_lessons(doc: Doctor) -> list[str]:
+    lines = [f"LEARNED FROM YOUR CORRECTIONS ({len(doc.lessons)})"]
+    for n, l in enumerate(doc.lessons, 1):
+        tag = (f"contradicts {l.conflicts_with}" if l.conflicts_with else f"already in {l.covered_by}"
+               if l.covered_by else ("personal" if l.scope == "personal" else "repo"))
+        lines.append(f"{n:>2}. [{l.count}×, {tag}] {l.rule}")
+    new = [str(n) for n, l in enumerate(doc.lessons, 1) if not l.covered_by and not l.conflicts_with]
+    if new:
+        lines.append(f"    Add them with `context-lens doctor --add-rules {','.join(new)}` (or pick some).")
+    return lines
+
+
 def render_text(doc: Doctor) -> str:
     icon = {FIX: "✗", LOOK: "!", OK: "✓"}
     lines = [f"context-lens doctor · {doc.profile.repo}", f"{len(doc.activity)} sessions in the last {doc.profile.days} days", ""]
@@ -456,14 +468,7 @@ def render_text(doc: Doctor) -> str:
         lines.append("  - Rule adherence   not checked (add --rules; sends redacted excerpts to a model)")
     if doc.lessons:
         lines.append("")
-        lines.append(f"LEARNED FROM YOUR CORRECTIONS ({len(doc.lessons)})")
-        for n, l in enumerate(doc.lessons, 1):
-            tag = (f"contradicts {l.conflicts_with}" if l.conflicts_with else f"already in {l.covered_by}"
-                   if l.covered_by else ("personal" if l.scope == "personal" else "repo"))
-            lines.append(f"{n:>2}. [{l.count}×, {tag}] {l.rule}")
-        new = [str(n) for n, l in enumerate(doc.lessons, 1) if not l.covered_by and not l.conflicts_with]
-        if new:
-            lines.append(f"    Add them with `context-lens doctor --add-rules {','.join(new)}` (or pick some).")
+        lines += render_lessons(doc)
     lines.append("")
     ranked = doc.ranked()
     if not ranked:

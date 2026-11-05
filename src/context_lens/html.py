@@ -86,7 +86,12 @@ ol.fixes{padding-left:22px}ol.fixes li{margin:0 0 18px}.fixes .t{font-weight:600
 .fixes ul{margin:6px 0 0;padding-left:18px;font-size:13px;color:var(--muted);overflow-wrap:anywhere}
 .bars{display:grid;grid-template-columns:minmax(0,1fr) 2fr auto;gap:6px 10px;align-items:center;font-size:13px}
 .bars .lbl{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.bar{height:12px;border-radius:3px;background:var(--c1)}
-.bar.bad{background:var(--c2)}.privacy{border-left:3px solid var(--c4);padding:8px 12px;background:var(--card);font-size:14px}
+.bar.bad{background:var(--c2)}
+.cta{margin:24px 0 8px;padding:18px 20px;background:var(--card);border:1px solid var(--line);border-left:4px solid var(--c1);border-radius:10px}
+.cta h2{margin:4px 0 8px}.cta p{margin:6px 0}.cta .quotes{margin:8px 0;padding-left:18px;font-size:14px;color:var(--muted);overflow-wrap:anywhere}
+.cmd{display:flex;gap:8px;align-items:center;margin:12px 0 8px;flex-wrap:wrap}
+.cmd code{font:14px ui-monospace,SFMono-Regular,Menlo,monospace;padding:8px 12px;border:1px solid var(--line);border-radius:8px;background:var(--bg)}
+.cmd button{font:inherit;font-size:13px;padding:7px 12px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--fg);cursor:pointer}.privacy{border-left:3px solid var(--c4);padding:8px 12px;background:var(--card);font-size:14px}
 """
 
 

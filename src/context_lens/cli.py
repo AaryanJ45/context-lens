@@ -76,10 +76,21 @@ def _checkup(repo: Path, out: Path, args: argparse.Namespace) -> int:
         code = _learn(doc, out, args)
         if code is not None:
             return code
-    out.mkdir(parents=True, exist_ok=True)
-    (out / "doctor.json").write_text(to_json(doc), encoding="utf-8")
-    (out / "doctor.html").write_text(render_doctor_html(doc), encoding="utf-8")
+    def write() -> None:
+        out.mkdir(parents=True, exist_ok=True)
+        (out / "doctor.json").write_text(to_json(doc), encoding="utf-8")
+        (out / "doctor.html").write_text(render_doctor_html(doc), encoding="utf-8")
+
+    write()
     print(render_text(doc))
+    if _offer_learn(doc, args):
+        _learn(doc, out, args)
+        if doc.lessons:
+            from .doctor import render_lessons
+
+            print("\n" + "\n".join(render_lessons(doc)))
+            print(f"\n{doc.privacy}")
+        write()
     print(f"\nData for scripts: {out / 'doctor.json'}")
     _show(out / "doctor.html", args)
     return 0
@@ -127,6 +138,32 @@ def _rules(doc, out: Path, args: argparse.Namespace) -> int | None:
               f"characters: prompts and one line per tool call, no tool output or file contents) to {model} via "
               f"{backend.name} ({u.calls} calls{cost}{note}).")
     return None
+
+
+def _offer_learn(doc, args: argparse.Namespace) -> bool:
+    """After a plain checkup at a terminal, ask once whether to learn from the corrections it found.
+
+    Nothing is sent unless the answer is yes; scripts, pipes and Claude itself never see the question
+    (the HTML report suggests --learn instead).
+    """
+    from .doctor import CORRECTIONS_LOOK
+    from .learn import gather
+
+    if args.learn or args.learn_dry_run or args.no_input or doc.lessons:
+        return False
+    if not (sys.stdin.isatty() and sys.stdout.isatty()):
+        return False
+    found = gather(doc.activity)
+    if len(found) < CORRECTIONS_LOOK:
+        return False
+    sessions = len({c.session_id for c in found})
+    print(f"\nYou corrected Claude {len(found)} times in {sessions} sessions.")
+    try:
+        answer = input("Learn rules from them? Sends redacted excerpts to a model, about $0.25. [y/N] ")
+    except (EOFError, KeyboardInterrupt):
+        print()
+        return False
+    return answer.strip().lower() in ("y", "yes")
 
 
 def _learn(doc, out: Path, args: argparse.Namespace) -> int | None:
@@ -404,6 +441,7 @@ def build_parser() -> argparse.ArgumentParser:
                    help="turn corrections you repeat into rules (sends your redacted words to a model)")
     g.add_argument("--learn-dry-run", action="store_true", help="write the exact request --learn would send, and send nothing")
     g.add_argument("--add-rules", metavar="N,M", help="add learned rules (numbers from --learn) to their CLAUDE.md")
+    g.add_argument("--no-input", action="store_true", help="never ask a question (for scripts)")
     g.add_argument("--add-to", choices=["repo", "local", "personal"],
                    help="where --add-rules writes: repo CLAUDE.md, CLAUDE.local.md, or ~/.claude/CLAUDE.md "
                         "(default: what each rule is about)")

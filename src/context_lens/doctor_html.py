@@ -24,6 +24,36 @@ def _bars(rows: list[tuple[str, float, bool]], fmt: str = "{:,.0f}") -> str:
     ) + "</div>"
 
 
+def _command(cmd: str) -> str:
+    return (f'<div class=cmd><code>{_e(cmd)}</code><button type=button onclick="navigator.clipboard'
+            f'.writeText(this.previousElementSibling.textContent).then(()=>{{this.textContent=\'Copied\'}})">Copy</button></div>')
+
+
+def _learn_cta(doc: Doctor) -> str:
+    """After a plain checkup, point at --learn when there are corrections to learn from."""
+    from .learn import gather
+
+    if doc.lessons:
+        return ""
+    found = gather(doc.activity)
+    if not found:
+        return ""
+    sessions = len({c.session_id for c in found})
+    quotes = "".join([f"<li>\u201c{_e(c.said[:140])}\u201d</li>" for c in found if c.said][:3])
+    return (
+        "<section class=cta><div class=label>Next step</div>"
+        f"<h2>You corrected Claude {len(found)} times in {sessions} sessions</h2>"
+        "<p>Each time you rejected an action, interrupted, or said \u201cno, don\u2019t\u2026\u201d, you stated a rule "
+        "your CLAUDE.md doesn\u2019t have. <b>--learn</b> groups the ones you repeat, writes the missing rules, and "
+        "flags any of your instructions that say the opposite.</p>"
+        f"<ul class=quotes>{quotes}</ul>"
+        f"{_command('context-lens doctor --learn')}"
+        f"<p class=muted>Run it in {_e(doc.profile.repo)}. One model call, about $0.25. It sends your redacted "
+        "correction words and the action before each, never tool output or file contents. To see exactly what "
+        "would be sent without sending it: <code>context-lens doctor --learn-dry-run</code></p></section>"
+    )
+
+
 def render_doctor_html(doc: Doctor) -> str:
     p, acts = doc.profile, doc.activity
     costs = [s.cost_usd for s in p.sessions if s.cost_usd is not None]
@@ -47,6 +77,8 @@ def render_doctor_html(doc: Doctor) -> str:
             "<p class=muted>Not checked. Run with <code>--rules</code> to have a model judge redacted excerpts "
             "of past sessions against your rules.</p>" if area == "Rule adherence" else "<p class=muted>No data.</p>")
         label = f'<span class="status {status}">{STATUS_LABEL[status]}</span>' if status else f'<span class=muted>{"Off" if area == "Rule adherence" else "No data"}</span>'
+        if area == "Corrections" and m and not doc.lessons:
+            body += "<p class=muted>Turn these into rules with <code>--learn</code>.</p>"
         areas.append(f"<div class=area><h3>{_e(area)}{label}</h3>{body}</div>")
 
     fixes = "".join(
@@ -96,6 +128,7 @@ def render_doctor_html(doc: Doctor) -> str:
 <h1>Context Lens Doctor</h1>
 <div class=muted>{_e(p.repo)} · {len(acts)} sessions in the last {p.days} days · token counts {'exact' if p.token_mode == 'exact' else 'estimated (≈)'} · API list prices as of {PRICES_AS_OF}</div>
 <div class=kpis>{kpi_html}</div>
+{_learn_cta(doc)}
 <h2>Checkup</h2><div class=areas>{''.join(areas)}</div>
 <h2>What to do, most important first</h2><ol class=fixes>{fixes}</ol>
 {lessons_html}
