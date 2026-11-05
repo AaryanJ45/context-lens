@@ -1,13 +1,11 @@
-"""Self-contained HTML report: no external scripts, fonts or images."""
+"""Shared HTML pieces: no external scripts, fonts or images."""
 
 from __future__ import annotations
 
 import html as h
-import statistics
 from collections import defaultdict
 
 from .discovery import STARTUP
-from .pricing import PRICES_AS_OF
 from .profile import Profile
 from .report import _rel, savings_buckets
 
@@ -60,7 +58,40 @@ def _stack(parts: list[tuple[str, int, str]]) -> str:
     return f'<div class="stack">{bars}</div><ul class="legend">{legend}</ul>'
 
 
-def render_html(p: Profile) -> str:
+CSS = """
+:root{--bg:#fbfaf7;--fg:#1d1d1b;--muted:#8a877f;--line:#e4e1d9;--card:#fff;
+--c1:#3b6fd8;--c2:#c2603a;--c3:#8a4fb8;--c4:#2f9a76;--c5:#c79a22;--c6:#5a8ca8}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#16171a;--fg:#ecebe6;--muted:#8d8b85;--line:#2c2e33;--card:#1e2024;
+--c1:#6f97ee;--c2:#e08a63;--c3:#b585e0;--c4:#5cc39e;--c5:#e2bb52;--c6:#84b3cc}}
+:root[data-theme="dark"]{--bg:#16171a;--fg:#ecebe6;--muted:#8d8b85;--line:#2c2e33;--card:#1e2024}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 ui-sans-serif,system-ui,-apple-system,sans-serif}
+main{max-width:1040px;margin:0 auto;padding:32px 16px 64px}h1{font-size:24px;margin:0 0 4px}h2{font-size:17px;margin:36px 0 12px}
+.muted{color:var(--muted);font-size:13px}.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin-top:20px}
+.kpi{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px}.label{font-size:13px;color:var(--muted)}
+.value{font-size:26px;font-weight:650;font-variant-numeric:tabular-nums}.sub{font-size:12px;color:var(--muted)}
+.stack{display:flex;height:22px;border-radius:6px;overflow:hidden;border:1px solid var(--line)}
+.legend{list-style:none;padding:0;display:flex;flex-wrap:wrap;gap:6px 18px;font-size:13px}.sw{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:6px}
+.chart{width:100%;height:auto;background:var(--card);border:1px solid var(--line);border-radius:10px}
+.chart text{fill:var(--muted);font-size:11px}.chart .grid{stroke:var(--line)}.chart .line{fill:none;stroke:var(--c1);stroke-width:2}.chart circle{fill:var(--c1)}
+.wrap{overflow-x:auto}table{width:100%;border-collapse:collapse;font-size:14px;background:var(--card);border:1px solid var(--line);border-radius:10px}
+th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);vertical-align:top}th{font-size:12px;color:var(--muted);font-weight:600}
+.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}.tag{border:1.5px solid;border-radius:99px;padding:1px 8px;font-size:12px;white-space:nowrap}
+.status{font-weight:650}.fix{color:var(--c2)}.look{color:var(--c5)}.ok{color:var(--c4)}
+.areas{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:12px}
+.area{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px}
+.area h3{margin:0 0 8px;font-size:15px;display:flex;justify-content:space-between;gap:8px}
+.area dl{display:grid;grid-template-columns:1fr auto;gap:2px 12px;margin:0;font-size:13px}.area dt{color:var(--muted)}
+.area dd{margin:0;text-align:right;font-variant-numeric:tabular-nums}
+ol.fixes{padding-left:22px}ol.fixes li{margin:0 0 18px}.fixes .t{font-weight:600}.fixes p{margin:4px 0}
+.fixes ul{margin:6px 0 0;padding-left:18px;font-size:13px;color:var(--muted);overflow-wrap:anywhere}
+.bars{display:grid;grid-template-columns:minmax(0,1fr) 2fr auto;gap:6px 10px;align-items:center;font-size:13px}
+.bars .lbl{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.bar{height:12px;border-radius:3px;background:var(--c1)}
+.bar.bad{background:var(--c2)}.privacy{border-left:3px solid var(--c4);padding:8px 12px;background:var(--card);font-size:14px}
+"""
+
+
+def startup_html(p: Profile) -> str:
+    """The startup-context sections of the doctor report."""
     est = "" if p.token_mode == "exact" else "≈"
     measured = p.measured_startup
     kinds: dict[str, int] = defaultdict(int)
@@ -70,17 +101,6 @@ def render_html(p: Profile) -> str:
     parts = [(k, v, palette[i % len(palette)]) for i, (k, v) in enumerate(sorted(kinds.items(), key=lambda kv: -kv[1]))]
     if measured:
         parts.append(("Claude Code prompt, tools, MCP (inferred)", max(measured - p.startup_file_tokens, 0), "var(--muted)"))
-
-    costs = [s.cost_usd for s in p.sessions if s.cost_usd is not None]
-    file_cost = p.file_cost_per_session(p.startup_file_tokens)
-    kpis = [
-        ("Tokens before your first message", f"{measured:,}" if measured else "n/a", f"median of {len(p.sessions)} sessions"),
-        ("From instruction files", f"{est}{p.startup_file_tokens:,}", f"{p.startup_file_tokens / measured:.0%} of startup" if measured else ""),
-        ("Cost per session", f"${statistics.median(costs):,.2f}" if costs else "n/a", "API-equivalent, median"),
-        ("Instruction files' share", f"${file_cost:,.2f}" if file_cost is not None else "n/a", f"over a median {p.median_turns or 0} turns"),
-    ]
-    kpi_html = "".join(f"<div class=kpi><div class=label>{_e(a)}</div><div class=value>{_e(b)}</div><div class=sub>{_e(c)}</div></div>" for a, b, c in kpis)
-
     rows = sorted(((f, s) for f, s in p.all_sections() if f.file.loaded == STARTUP), key=lambda fs: -fs[1].tokens)
     table = "".join(
         f"<tr><td class=num>{est}{s.tokens:,}</td>"
@@ -91,45 +111,16 @@ def render_html(p: Profile) -> str:
         f"{' · ' + str(len(s.missing_refs)) + ' paths not found' if s.missing_refs else ''}</div></td></tr>"
         for f, s in rows[:40]
     )
-
     buckets = savings_buckets(p)
     bucket_html = "".join(
         f"<li><b>{est}{v:,}</b> {_e(k)}</li>" for k, v in sorted(buckets.items(), key=lambda kv: -kv[1])
     ) or "<li>none detected</li>"
-
     growth = _line_chart([(pt.when.date().isoformat(), pt.bytes / 1024) for pt in p.history], " KB")
     sessions_chart = _line_chart([(s.started.date().isoformat(), s.startup_tokens) for s in p.sessions], "")
-
-    return f"""<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Context Lens Report</title>
-<style>
-:root{{--bg:#fbfaf7;--fg:#1d1d1b;--muted:#8a877f;--line:#e4e1d9;--card:#fff;
---c1:#3b6fd8;--c2:#c2603a;--c3:#8a4fb8;--c4:#2f9a76;--c5:#c79a22;--c6:#5a8ca8}}
-@media (prefers-color-scheme:dark){{:root:not([data-theme="light"]){{--bg:#16171a;--fg:#ecebe6;--muted:#8d8b85;--line:#2c2e33;--card:#1e2024;
---c1:#6f97ee;--c2:#e08a63;--c3:#b585e0;--c4:#5cc39e;--c5:#e2bb52;--c6:#84b3cc}}}}
-:root[data-theme="dark"]{{--bg:#16171a;--fg:#ecebe6;--muted:#8d8b85;--line:#2c2e33;--card:#1e2024}}
-*{{box-sizing:border-box}}body{{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 ui-sans-serif,system-ui,-apple-system,sans-serif}}
-main{{max-width:1040px;margin:0 auto;padding:32px 16px 64px}}h1{{font-size:24px;margin:0 0 4px}}h2{{font-size:17px;margin:36px 0 12px}}
-.muted{{color:var(--muted);font-size:13px}}.kpis{{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin-top:20px}}
-.kpi{{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px}}.label{{font-size:13px;color:var(--muted)}}
-.value{{font-size:26px;font-weight:650;font-variant-numeric:tabular-nums}}.sub{{font-size:12px;color:var(--muted)}}
-.stack{{display:flex;height:22px;border-radius:6px;overflow:hidden;border:1px solid var(--line)}}
-.legend{{list-style:none;padding:0;display:flex;flex-wrap:wrap;gap:6px 18px;font-size:13px}}.sw{{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:6px}}
-.chart{{width:100%;height:auto;background:var(--card);border:1px solid var(--line);border-radius:10px}}
-.chart text{{fill:var(--muted);font-size:11px}}.chart .grid{{stroke:var(--line)}}.chart .line{{fill:none;stroke:var(--c1);stroke-width:2}}.chart circle{{fill:var(--c1)}}
-.wrap{{overflow-x:auto}}table{{width:100%;border-collapse:collapse;font-size:14px;background:var(--card);border:1px solid var(--line);border-radius:10px}}
-th,td{{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);vertical-align:top}}th{{font-size:12px;color:var(--muted);font-weight:600}}
-.num{{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}}.tag{{border:1.5px solid;border-radius:99px;padding:1px 8px;font-size:12px;white-space:nowrap}}
-</style></head><body><main>
-<h1>Context Lens</h1>
-<div class=muted>{_e(p.repo)} · token counts {'exact' if p.token_mode == 'exact' else 'estimated (≈)'} · last {p.days} days · API list prices as of {PRICES_AS_OF}</div>
-<div class=kpis>{kpi_html}</div>
-<h2>What fills the context at startup</h2>{_stack(parts)}
+    return f"""<h2>What fills the context at startup</h2>{_stack(parts)}
 <h2>Startup tokens per session</h2>{sessions_chart}
 <h2>CLAUDE.md size over its git history</h2>{growth}
 <h2>Compaction candidates</h2><ul>{bucket_html}</ul>
-<p class=muted>Heuristic signals. The compactor reviews every section before anything moves.</p>
+<p class=muted>Heuristic signals. `context-lens doctor --compact` reviews every section before anything moves.</p>
 <h2>Biggest sections loaded at startup</h2>
-<div class=wrap><table><thead><tr><th class=num>Tokens</th><th>Hint</th><th>Last edited</th><th>Section</th></tr></thead><tbody>{table}</tbody></table></div>
-</main></body></html>"""
+<div class=wrap><table><thead><tr><th class=num>Tokens</th><th>Hint</th><th>Last edited</th><th>Section</th></tr></thead><tbody>{table}</tbody></table></div>"""

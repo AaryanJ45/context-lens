@@ -1,13 +1,15 @@
 {
   "name": "context-lens",
-  "description": "Measure and shrink the context Claude Code loads before the first message.",
-  "owner": { "name": "Aaryan Jadhav" },
+  "description": "Check how efficiently Claude Code runs in a repo, and shrink what it loads before the first message.",
+  "owner": {
+    "name": "Aaryan Jadhav"
+  },
   "plugins": [
     {
       "name": "context-lens",
       "source": "./plugin",
-      "description": "Profile what Claude Code loads at startup, compact CLAUDE.md into on-demand rule files with nothing lost, and prove the result still gets followed.",
-      "version": "0.2.0"
+      "description": "Check how efficiently Claude Code runs in a repo and what to fix, compact CLAUDE.md into on-demand rule files with nothing lost, and prove the result still gets followed.",
+      "version": "0.3.0"
     }
   ]
 }
