@@ -9,6 +9,33 @@ imports, rules, auto memory, the skill listing) on top of its own system prompt.
 That block is written to the prompt cache once and re-read on **every turn**,
 and in a busy repo `CLAUDE.md` tends to grow faster than anyone prunes it.
 
+## Results
+
+Run on a production repo whose root `CLAUDE.md` had grown past 100 KB:
+`compact` proposed a slim root file plus five path-scoped rule files, and
+`eval` ran 29 rule probes × 3 runs × 2 variants (174 headless sessions on
+Sonnet 5.5). Rule names are withheld; the chart below is generated with
+`context-lens eval report --anonymize`.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/eval-dark.png">
+  <img alt="Before vs after: startup context 63.5k to 17.0k tokens, input tokens per session 377k to 221k, first-run cost per session $0.40 to $0.26, rules followed 87% to 90%; per-rule pass rates mostly identical" src="docs/images/eval-light.png">
+</picture>
+
+What it shows, and what it doesn't:
+
+- **No measurable loss in rule-following.** 76/87 runs passed on the original,
+  78/87 on the compacted version; the 95% intervals overlap. Of 87 paired runs,
+  3 passed only before and 5 only after.
+- **The saving is context, every session.** 46k fewer tokens ride along on
+  every turn. Over a long session (say 80 turns) that is about 3.7M fewer
+  cache-read tokens, roughly $1 at list price.
+- **Cost depends on cache warmth.** A large prefix that is already cached is
+  cheap to re-read, and compacted sessions take ~2 more turns opening rule
+  files, so back-to-back sessions saved nothing here ($0.15 vs $0.20).
+- **Probes are short, read-only tasks** (~10 turns). In long sessions the fixed
+  startup cost is a smaller share of the total.
+
 ## Install
 
 ```sh

@@ -12,6 +12,7 @@ import json
 import math
 import statistics
 from collections import defaultdict
+from dataclasses import replace
 
 from .eval import Probe, RunResult
 
@@ -40,6 +41,10 @@ def _esc(s: str) -> str:
 
 def _fmt_tokens(n: float) -> str:
     return f"{n / 1000:.1f}k" if n >= 1000 else f"{n:.0f}"
+
+
+def _change(before: float, after: float) -> str:
+    return f"{(after - before) / before:+.0%}" if before else "n/a"
 
 
 def _summary(results: list[RunResult], variant: str) -> dict:
@@ -95,7 +100,8 @@ def _dumbbell(probes: list[Probe], results: list[RunResult]) -> str:
             rs = [r for r in results if r.probe_id == p.id and r.variant == v and r.passed is not None]
             rate[(p.id, v)] = (sum(1 for r in rs if r.passed), len(rs))
     order = sorted(probes, key=lambda p: (ACTION_ORDER.index(p.action) if p.action in ACTION_ORDER else 9, p.id))
-    w, left, right, row, head = 760, 330, 24, 22, 26
+    # Room for "p07 <rule text>" labels; bare "Rule 07" labels (anonymized) need far less.
+    w, left, right, row, head = 760, (330 if any(p.rule for p in probes) else 100), 24, 22, 26
     span = w - left - right
     x = lambda f: left + span * f  # noqa: E731
     y, parts, last_action = head, [], None
@@ -109,7 +115,8 @@ def _dumbbell(probes: list[Probe], results: list[RunResult]) -> str:
         ka, na = rate[(p.id, "after")]
         fb, fa = kb / max(nb, 1), ka / max(na, 1)
         rule = p.rule if len(p.rule) <= 42 else p.rule[:41].rstrip() + "…"
-        tip = _esc(f"{p.id} · {p.rule}\nBefore: {kb}/{nb} runs passed\nAfter: {ka}/{na} runs passed")
+        name = f"{p.id} · {p.rule}" if p.rule else p.id
+        tip = _esc(f"{name}\nBefore: {kb}/{nb} runs passed\nAfter: {ka}/{na} runs passed")
         cy = y + row / 2
         line = (f'<line x1="{x(min(fb, fa))}" x2="{x(max(fb, fa))}" y1="{cy}" y2="{cy}" class="link"/>'
                 if fb != fa else "")
@@ -146,6 +153,17 @@ def _table(probes: list[Probe], results: list[RunResult]) -> str:
             + "".join(rows) + "</tbody></table>")
 
 
+def anonymize(probes: list[Probe], results: list[RunResult]) -> tuple[list[Probe], list[RunResult]]:
+    """Strip every word of the repo's rules: probes become "Rule 01", "Rule 02", … for publishing."""
+    order = sorted(probes, key=lambda p: (ACTION_ORDER.index(p.action) if p.action in ACTION_ORDER else 9, p.id))
+    names = {p.id: f"Rule {k + 1:02d}" for k, p in enumerate(order)}
+    anon = [replace(p, id=names[p.id], section_id="", section_title="", rule="", prompt="", files=[],
+                    rubric="", original="", related="", review_note="") for p in probes]
+    runs = [replace(r, probe_id=names.get(r.probe_id, r.probe_id), answer="", judge_reason="", files_read=[])
+            for r in results]
+    return anon, runs
+
+
 def render_eval_html(probes: list[Probe], results: list[RunResult], model: str, title: str = "CLAUDE.md compaction") -> str:
     b, a = _summary(results, "before"), _summary(results, "after")
     reps = max((r.rep for r in results), default=0) + 1
@@ -164,11 +182,11 @@ def render_eval_html(probes: list[Probe], results: list[RunResult], model: str, 
 
     tiles = "".join([
         tile("Startup context", _fmt_tokens(b["startup"]), _fmt_tokens(a["startup"]),
-             f"{(a['startup'] - b['startup']) / b['startup']:+.0%} tokens before the first message (median)"),
+             f"{_change(b['startup'], a['startup'])} tokens before the first message (median)"),
         tile("Tokens per session", _fmt_tokens(b["total"]), _fmt_tokens(a["total"]),
-             f"{(a['total'] - b['total']) / b['total']:+.0%} total input, all turns (mean)"),
+             f"{_change(b['total'], a['total'])} total input, all turns (mean)"),
         tile("Cost per session, first run", f"${b['cost_first']:.2f}", f"${a['cost_first']:.2f}",
-             f"{(a['cost_first'] - b['cost_first']) / b['cost_first']:+.0%} at list price, prompt cache mostly cold"
+             f"{_change(b['cost_first'], a['cost_first'])} at list price, prompt cache mostly cold"
              + (f"; repeat runs with a warm cache ${b['cost_repeat']:.2f} → ${a['cost_repeat']:.2f}" if reps > 1 else "")),
         tile("Rules followed", f"{b['rate']:.0%}", f"{a['rate']:.0%}",
              f"95% CI {b['lo']:.0%}–{b['hi']:.0%} vs {a['lo']:.0%}–{a['hi']:.0%}"),

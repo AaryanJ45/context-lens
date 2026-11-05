@@ -139,12 +139,14 @@ def _eval_run(args: argparse.Namespace) -> int:
 
 def _eval_report(args: argparse.Namespace) -> int:
     from .eval import eval_report, load_probes
-    from .eval_html import load_results, render_eval_html
+    from .eval_html import anonymize, load_results, render_eval_html
 
     probes = load_probes(Path(args.probes))
     results = load_results(Path(args.results))
     seen = {r.probe_id for r in results}
     probes = [p for p in probes if p.id in seen]
+    if args.anonymize:
+        probes, results = anonymize(probes, results)
     Path(args.html).write_text(render_eval_html(probes, results, args.model), encoding="utf-8")
     print(eval_report(probes, results, args.model).split("## Probes")[0].rstrip())
     print(f"\nHTML report written to {args.html}")
@@ -214,6 +216,8 @@ def main(argv: list[str] | None = None) -> int:
     rp.add_argument("--results", required=True, help="results.json or results.partial.jsonl")
     rp.add_argument("--model", default="claude-sonnet-5-5")
     rp.add_argument("--html", default="report.html")
+    rp.add_argument("--anonymize", action="store_true",
+                    help="label probes Rule 01, Rule 02, … and drop all rule text, answers and file names")
     rp.set_defaults(func=_eval_report)
 
     args = parser.parse_args(argv)

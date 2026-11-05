@@ -140,3 +140,20 @@ def test_excerpt_keeps_the_relevant_sentence_of_a_long_section():
     errs = Item("s2", "Errors", "Errors need context when reported.", 50, "core", [], None, 0.0, ["context"])
     got = _excerpt(long, errs, limit=400)
     assert got.startswith("3. Logging.") and "`report_error`" in got and len(got) < 600
+
+
+def test_anonymize_strips_all_rule_text():
+    from context_lens.eval_html import anonymize, render_eval_html
+
+    probes = [Probe("p0", "s0", "Secret › Billing", "move", "Never call the billing API", "do x", ["src/billing.py"],
+                    "rubric", "orig text"),
+              Probe("p1", "s1", "Secret › Auth", "keep", "Auth rule", "do y", ["src/auth.py"], "rubric", "orig")]
+    results = [RunResult("p0", "before", 0, answer="src/billing.py", passed=True, judge_reason="billing ok",
+                         files_read=["src/billing.py"]),
+               RunResult("p0", "after", 0, passed=True), RunResult("p1", "before", 0, passed=False),
+               RunResult("p1", "after", 0, passed=True)]
+    ap, ar = anonymize(probes, results)
+    page = render_eval_html(ap, ar, "m")
+    for secret in ("billing", "Billing", "Auth", "auth.py", "Never call", "Secret"):
+        assert secret not in page
+    assert "Rule 01" in page and "Rule 02" in page
