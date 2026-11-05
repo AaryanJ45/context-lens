@@ -134,6 +134,26 @@ from an empty directory with settings, MCP servers, skills and tools off, so
 each call carries about 1k tokens of overhead and bills to your subscription.
 `auto` (the default) picks the API when a key is set, else Claude Code.
 
+### Try it in your checkout only
+
+Not ready to change the `CLAUDE.md` your team pulls? `--apply-local` switches
+just your checkout to the slim version and leaves the committed file alone:
+
+```sh
+context-lens compact . --from-plan context-lens-out/plan.json --apply-local
+context-lens local status   # on/off, and whether a pull has made the slim copy stale
+context-lens local off      # back to the committed CLAUDE.md, every local file removed
+```
+
+The slim root goes in `CLAUDE.local.md`, the rule files in
+`.claude/rules/context-lens-local/`, and `.claude/settings.local.json` gets a
+`claudeMdExcludes` entry so Claude Code skips the long original. All of them
+are listed in `.git/info/exclude`, so `git status` stays clean and nothing can
+be committed by accident. The original keeps updating with every pull; when it
+changes, `local status` exits 1 and the plugin's SessionStart hook tells the
+session to read the original for newer rules until you re-run compact.
+`profile` honours `claudeMdExcludes`, so it measures what you actually load.
+
 ## Prove it still works
 
 ```sh

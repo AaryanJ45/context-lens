@@ -47,6 +47,9 @@ def _compact(args: argparse.Namespace) -> int:
     if not target.is_file():
         print(f"context-lens: {target} not found", file=sys.stderr)
         return 2
+    if args.apply and args.apply_local:
+        print("context-lens: pick one of --apply and --apply-local", file=sys.stderr)
+        return 2
     out = Path(args.out).expanduser().resolve()
     counter = TokenCounter(args.count_model, args.tokens)
     if args.from_plan:
@@ -74,6 +77,43 @@ def _compact(args: argparse.Namespace) -> int:
     if args.apply:
         for path in write_outputs(repo, outputs):
             print(f"applied {path}")
+    if args.apply_local:
+        from .local import LocalModeError, enable
+
+        try:
+            written = enable(repo, target, outputs)
+        except LocalModeError as exc:
+            print(f"context-lens: {exc}", file=sys.stderr)
+            return 2
+        for path in written:
+            print(f"applied locally {path}")
+        print(f"{args.file} is unchanged and still committed; this checkout now loads the slim version. "
+              "Undo with `context-lens local off`.")
+    return 0
+
+
+def _local(args: argparse.Namespace) -> int:
+    from .local import disable, status
+
+    repo = Path(args.path).expanduser().resolve()
+    st = status(repo)
+    if args.local_command == "off":
+        removed = disable(repo)
+        print(f"local mode off; removed {len(removed)} file(s)" if st.active else "local mode is not on")
+        return 0
+    if not st.active:
+        if not args.quiet:
+            print("local mode is off: this checkout loads the committed CLAUDE.md")
+        return 0
+    if st.stale:
+        rel = st.original.relative_to(repo)
+        print(f"context-lens local mode: {rel} changed since the slim copy was made, so CLAUDE.local.md "
+              f"may be missing new rules. Read {rel} for anything newer, and re-run "
+              "`context-lens compact --apply-local` (or `context-lens local off`).")
+        return 1
+    if not args.quiet:
+        print(f"local mode on: {st.original.relative_to(repo)} is excluded, "
+              f"{len(st.files)} local file(s) load instead; up to date")
     return 0
 
 
@@ -183,12 +223,20 @@ def main(argv: list[str] | None = None) -> int:
     c.add_argument("--out", default="context-lens-out", help="where proposed files, plan and report go")
     c.add_argument("--from-plan", metavar="PLAN", help="re-assemble from a saved plan.json, no model calls")
     c.add_argument("--apply", action="store_true", help="also write the proposed files into the repo")
+    c.add_argument("--apply-local", action="store_true",
+                   help="use the proposal in this checkout only: the tracked file stays untouched and nothing is committable")
     c.add_argument("--no-repair", action="store_true", help="skip the second pass on lost facts")
     c.add_argument("--no-index", action="store_true", help="don't list the scoped rule files in CLAUDE.md")
     c.add_argument("--tokens", choices=["auto", "exact", "estimate"], default="auto")
     c.add_argument("--count-model", default="claude-opus-5-5", help="model used for exact token counts")
     c.add_argument("--days", type=int, default=30, help="transcript window for the measured baseline")
     c.set_defaults(func=_compact)
+
+    lo = sub.add_parser("local", help="status of, or turn off, a compact applied with --apply-local")
+    lo.add_argument("local_command", choices=["status", "off"])
+    lo.add_argument("path", nargs="?", default=".", help="repo root (default: .)")
+    lo.add_argument("--quiet", action="store_true", help="print only when the slim copy is stale")
+    lo.set_defaults(func=_local)
 
     e = sub.add_parser("eval", help="check a compacted CLAUDE.md still gets followed")
     esub = e.add_subparsers(dest="eval_command", required=True)
