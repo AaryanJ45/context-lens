@@ -48,11 +48,32 @@ sh "${CLAUDE_PLUGIN_ROOT}/scripts/run.sh" compact . --from-plan .context-lens/co
 
 ## 4. Apply only when the user says so
 
-```sh
-sh "${CLAUDE_PLUGIN_ROOT}/scripts/run.sh" compact . --from-plan .context-lens/compact/plan.json --out .context-lens/compact --apply
-```
+Ask which way, unless they already said:
 
-Never apply without explicit approval and never commit. After applying, show
-`git diff --stat` and suggest `/context-lens:eval` **before** committing: eval
-compares the committed version against the proposal, so it has to run while
-the original is still what is committed.
+- **Locally (recommended for trying it out).** Only this checkout switches to
+  the slim version. The committed `CLAUDE.md` is untouched on disk and in git,
+  nothing appears in `git status`, and teammates are unaffected:
+
+  ```sh
+  sh "${CLAUDE_PLUGIN_ROOT}/scripts/run.sh" compact . --from-plan .context-lens/compact/plan.json --out .context-lens/compact --apply-local
+  ```
+
+  It writes `CLAUDE.local.md`, rule files under `.claude/rules/context-lens-local/`,
+  a `claudeMdExcludes` entry in `.claude/settings.local.json` and lines in
+  `.git/info/exclude`. Tell the user it takes effect in the **next** session, that
+  `run.sh local status` checks it and `run.sh local off` undoes it completely, and
+  that after a pull changes `CLAUDE.md` the slim copy is stale (the plugin warns
+  at session start) and should be re-made with step 1 and `--apply-local`.
+
+- **In the repo.** Rewrites the tracked files for everyone:
+
+  ```sh
+  sh "${CLAUDE_PLUGIN_ROOT}/scripts/run.sh" compact . --from-plan .context-lens/compact/plan.json --out .context-lens/compact --apply
+  ```
+
+  Never commit. After applying, show `git diff --stat` and suggest
+  `/context-lens:eval` **before** committing: eval compares the committed version
+  against the proposal, so it has to run while the original is still what is
+  committed.
+
+Never apply either way without explicit approval.

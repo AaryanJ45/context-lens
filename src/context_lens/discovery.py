@@ -13,6 +13,8 @@ Mirrors Claude Code's memory hierarchy:
 
 from __future__ import annotations
 
+import fnmatch
+import json
 import re
 import subprocess
 from dataclasses import dataclass, field
@@ -126,15 +128,32 @@ def _git_files(repo: Path, pattern: str) -> list[Path]:
     return [repo / line for line in out.splitlines() if line]
 
 
+def _md_excludes(cwd: Path, home: Path) -> list[str]:
+    """`claudeMdExcludes` from the user, project and local settings files."""
+    patterns: list[str] = []
+    for path in (home / ".claude" / "settings.json", cwd / ".claude" / "settings.json",
+                 cwd / ".claude" / "settings.local.json"):
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if isinstance(data, dict) and isinstance(data.get("claudeMdExcludes"), list):
+            patterns += [p for p in data["claudeMdExcludes"] if isinstance(p, str) and p]
+    return patterns
+
+
 def discover(cwd: Path, home: Path | None = None) -> list[ContextFile]:
     cwd = cwd.resolve()
     home = (home or Path.home()).resolve()
     seen: set[Path] = set()
     files: list[ContextFile] = []
+    excludes = _md_excludes(cwd, home)
 
     def add(path: Path, kind: str, loaded: str, scope: list[str] | None = None) -> None:
         path = path.resolve()
         if path in seen or not path.is_file():
+            return
+        if kind != "auto-memory" and any(fnmatch.fnmatchcase(str(path), p) for p in excludes):
             return
         text = _read(path)
         if text is None:
