@@ -1,0 +1,29 @@
+[build-system]
+requires = ["hatchling>=1.21"]
+build-backend = "hatchling.build"
+
+[project]
+name = "context-lens"
+version = "0.1.0"
+description = "Measure and shrink the context Claude Code loads before you type a word."
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.10"
+authors = [{ name = "Aaryan Jadhav" }]
+keywords = ["claude", "claude-code", "llm", "tokens", "developer-tools"]
+dependencies = []
+
+[project.optional-dependencies]
+# Exact token counts through Anthropic's count_tokens endpoint.
+exact = ["anthropic>=0.60"]
+dev = ["pytest>=8"]
+
+[project.scripts]
+context-lens = "context_lens.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/context_lens"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
