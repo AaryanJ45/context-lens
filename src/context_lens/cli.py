@@ -19,6 +19,9 @@ def _profile(args: argparse.Namespace) -> int:
         print(f"context-lens: {repo} is not a directory", file=sys.stderr)
         return 2
     prof = build_profile(repo, days=args.days, token_mode=args.tokens, model=args.model)
+    for out in (args.json, args.html):
+        if out:
+            Path(out).parent.mkdir(parents=True, exist_ok=True)
     if args.json:
         Path(args.json).write_text(to_json(prof), encoding="utf-8")
     if args.html:
@@ -87,6 +90,7 @@ def _eval_gen(args: argparse.Namespace) -> int:
         print(f"context-lens: {exc}", file=sys.stderr)
         return 2
     probes = generate_probes(backend, repo, plan, args.n, jobs=args.jobs, seed=args.seed, review=not args.no_review)
+    Path(args.out).parent.mkdir(parents=True, exist_ok=True)
     save_probes(Path(args.out), probes)
     print(f"{len(probes)} probes written to {args.out}; review and edit them before `eval run`.")
     return 0
@@ -145,6 +149,7 @@ def _eval_report(args: argparse.Namespace) -> int:
     results = load_results(Path(args.results))
     seen = {r.probe_id for r in results}
     probes = [p for p in probes if p.id in seen]
+    Path(args.html).parent.mkdir(parents=True, exist_ok=True)
     if args.anonymize:
         probes, results = anonymize(probes, results)
     Path(args.html).write_text(render_eval_html(probes, results, args.model), encoding="utf-8")

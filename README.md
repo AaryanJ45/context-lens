@@ -46,6 +46,29 @@ pipx install "context-lens[exact] @ git+https://github.com/AaryanJ45/context-len
 
 Python 3.10+. The core has no dependencies.
 
+## Use it inside Claude Code
+
+The repo is also a Claude Code plugin marketplace. In any session:
+
+```
+/plugin install context-lens --marketplace AaryanJ45/context-lens
+```
+
+(On Claude Code before 2.1.275: `/plugin marketplace add AaryanJ45/context-lens`,
+then `/plugin install context-lens@context-lens`.)
+
+That adds three commands, each of which runs the CLI and walks you through the
+result:
+
+- `/context-lens:profile` — what your sessions load at startup and the most expensive sections
+- `/context-lens:compact` — propose the slim layout, review what moved and anything lost, apply only when you say so
+- `/context-lens:eval` — a quick (20 sessions) or full (~180 sessions) before/after check
+
+The plugin needs Python 3.10+. It uses an installed `context-lens` if there is
+one, else `uvx` or `pipx`, else installs a private copy into
+`~/.cache/context-lens` on first use. Outputs go to `.context-lens/` in your
+repo; add it to `.gitignore`.
+
 ## Profile a repo
 
 ```sh
@@ -144,7 +167,7 @@ across variants and lists every failure with the files the session read.
       doc pointers, with a coverage check that every original rule lands somewhere
 - [x] `eval`: run rule-probing tasks headlessly under both versions and compare
       startup tokens, cost and rule pass rate
-- [ ] Claude Code plugin wrapping the CLI
+- [x] Claude Code plugin wrapping the CLI
 
 ## License
 

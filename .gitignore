@@ -6,3 +6,6 @@ build/
 .pytest_cache/
 report.html
 profile.json
+
+.context-lens/
+context-lens-out/

@@ -1,0 +1,9 @@
+{
+  "name": "context-lens",
+  "version": "0.1.0",
+  "description": "Profile what Claude Code loads at startup, compact CLAUDE.md into on-demand rule files with nothing lost, and prove the result still gets followed.",
+  "author": { "name": "Aaryan Jadhav" },
+  "repository": "https://github.com/AaryanJ45/context-lens",
+  "license": "MIT",
+  "keywords": ["claude-md", "context", "tokens", "cost"]
+}
