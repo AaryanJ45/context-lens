@@ -67,3 +67,15 @@ def test_stale_local_copy_is_a_fix(tmp_path):
     [finding] = check_local(repo, metrics)
     assert finding.severity == FIX and "--compact --apply-local" in finding.fix
     assert metrics["local slim copy"] == "stale"
+
+
+def test_add_rules_needs_learn_first_then_writes(tmp_path, capsys):
+    from context_lens.learn import Lesson, save
+
+    repo = _repo(tmp_path)
+    assert cli.main([str(repo), "--add-rules", "1"]) == 2
+    assert "run `context-lens doctor --learn` first" in capsys.readouterr().err
+    save([Lesson("Pnpm", "Use pnpm, not npm.", "repo")], repo / ".context-lens" / "learn" / "lessons.json")
+    assert cli.main([str(repo), "--add-rules", "1"]) == 0
+    assert "- Use pnpm, not npm." in (repo / "CLAUDE.md").read_text()
+    assert cli.main([str(repo), "--add-rules", "7"]) == 2

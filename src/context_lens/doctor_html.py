@@ -64,6 +64,20 @@ def render_doctor_html(doc: Doctor) -> str:
     peak_chart = _line_chart([(a.started.date().isoformat(), a.peak_context) for a in acts if a.started and a.context], "")
     mcp_rows = [(name, n, n == 0) for name, n in sorted(doc.mcp_servers.items(), key=lambda kv: -kv[1])]
 
+    lessons_html = ""
+    if doc.lessons:
+        items = "".join(
+            f"<li><div class=t>{_e(l.rule)}</div><p class=muted>{l.count}× · "
+            f"{_e('already in ' + l.covered_by if l.covered_by else ('personal' if l.scope == 'personal' else 'repo'))}"
+            f"{'' if l.covered_by else f' · add with <code>--add-rules {n}</code>'}</p><ul>"
+            + "".join(f"<li>{_e(e['kind'])}: \u201c{_e(e['said'][:200])}\u201d"
+                      f"{'<br><span class=muted>after: ' + _e(e['before'][:160]) + '</span>' if e['before'] else ''}</li>"
+                      for e in l.examples[:4] if e["said"])
+            + "</ul></li>"
+            for n, l in enumerate(doc.lessons, 1)
+        )
+        lessons_html = f"<h2>Learned from your corrections</h2><ol class=fixes>{items}</ol>"
+
     rules_html = ""
     if doc.rules:
         rows = "".join(
@@ -84,6 +98,7 @@ def render_doctor_html(doc: Doctor) -> str:
 <div class=kpis>{kpi_html}</div>
 <h2>Checkup</h2><div class=areas>{''.join(areas)}</div>
 <h2>What to do, most important first</h2><ol class=fixes>{fixes}</ol>
+{lessons_html}
 <p class=privacy>{_e(doc.privacy)}</p>
 <h2>Tools Claude used most</h2>{_bars(tool_rows)}
 <h2>MCP servers: calls in this window</h2>{_bars(mcp_rows) if mcp_rows else '<p class=muted>No MCP servers configured.</p>'}

@@ -1,6 +1,6 @@
 ---
 name: doctor
-description: Check how efficiently Claude Code runs in this repo and fix it - startup context (CLAUDE.md, rules, memory, skill listing), wasted work in past sessions (oversized tool output, failing and repeated calls), unused MCP servers and skills, compactions, and optionally whether past sessions followed the CLAUDE.md rules; then shrink CLAUDE.md into on-demand rule files and prove the slim version still works. Use when the user asks why sessions are slow, expensive or forgetful, whether their setup is efficient, what is using up their context, wants to shrink or clean up their CLAUDE.md, or wants before and after numbers.
+description: Check how efficiently Claude Code runs in this repo and fix it - startup context (CLAUDE.md, rules, memory, skill listing), what the user keeps correcting Claude about (and the CLAUDE.md rules that would stop it), wasted work in past sessions (oversized tool output, failing and repeated calls), unused MCP servers and skills, compactions, and optionally whether past sessions followed the CLAUDE.md rules; then shrink CLAUDE.md into on-demand rule files and prove the slim version still works. Use when the user asks why sessions are slow, expensive or forgetful, why Claude keeps making the same mistake, what rules they are missing, whether their setup is efficient, what is using up their context, wants to shrink or clean up their CLAUDE.md, or wants before and after numbers.
 ---
 
 # Doctor
@@ -25,11 +25,38 @@ not a dump of the output:
 3. **The total** tokens per session that could stay out of context.
 4. **Tell them the full visual report is open in their browser**, and give the
    `file://` link from the last line of the output in case it didn't open.
-5. **Offer the next step** that fits: the rule check (step 2) if they care
-   whether Claude follows their rules; shrinking CLAUDE.md (step 3) if startup
-   context is the top fix.
+5. **Offer the next step** that fits. If the Corrections area shows repeated
+   corrections, offer learning (step 2) first: it is the most useful one. Offer
+   the rule check (step 2b) if they care whether Claude follows their rules,
+   and shrinking CLAUDE.md (step 3) if startup context is the top fix.
 
-## 2. Rule adherence (opt-in)
+## 2. Learn from corrections (opt-in)
+
+This sends data to a model, so say so first: their words from each time they
+rejected, interrupted or pushed back on Claude, the one-line actions just
+before each, and their rule titles, all redacted. It costs about $0.25. To show
+them exactly what would be sent:
+`sh "${CLAUDE_PLUGIN_ROOT}/scripts/run.sh" doctor . --learn-dry-run`
+
+```sh
+sh "${CLAUDE_PLUGIN_ROOT}/scripts/run.sh" doctor . --learn --open
+```
+
+List each lesson from "LEARNED FROM YOUR CORRECTIONS" with how many times they
+said it and one quote. Then:
+
+- **Contradicts R…**: their own instructions say the opposite of what they keep
+  asking for. Show that rule's text and offer to edit it yourself; this is the
+  fix that matters most.
+- **Already in R…**: the rule exists and isn't followed. Offer to make it more
+  concrete, or to enforce it with a hook.
+- **New**: ask which to add, then run `doctor . --add-rules <numbers>`.
+  Personal lessons go to `~/.claude/CLAUDE.md`, repo lessons to the repo's
+  `CLAUDE.md`, and `--add-to local` keeps them out of git. Show what was
+  written. Never commit.
+
+## 2b. Rule adherence (opt-in)
+
 
 This is the one check that sends data to a model. Say so before running it:
 it sends their rule text, plus their prompts and one line per tool call
