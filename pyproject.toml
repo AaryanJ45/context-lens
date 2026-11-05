@@ -4,8 +4,8 @@ build-backend = "hatchling.build"
 
 [project]
 name = "context-lens"
-version = "0.2.0"
-description = "Measure and shrink the context Claude Code loads before you type a word."
+version = "0.3.0"
+description = "Check how efficiently Claude Code runs in a repo, and shrink what it loads before you type a word."
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.10"

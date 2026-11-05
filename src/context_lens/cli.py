@@ -9,31 +9,75 @@ import sys
 from pathlib import Path
 
 from . import __version__
-from .profile import build_profile
-from .report import render_text, to_json
 
 
-def _profile(args: argparse.Namespace) -> int:
+def _doctor(args: argparse.Namespace) -> int:
+    from .doctor import render_text, run_doctor, to_json
+    from .doctor_html import render_doctor_html
+
     repo = Path(args.path).expanduser()
     if not repo.is_dir():
         print(f"context-lens: {repo} is not a directory", file=sys.stderr)
         return 2
-    prof = build_profile(repo, days=args.days, token_mode=args.tokens, model=args.model)
-    for out in (args.json, args.html):
-        if out:
-            Path(out).parent.mkdir(parents=True, exist_ok=True)
-    if args.json:
-        Path(args.json).write_text(to_json(prof), encoding="utf-8")
-    if args.html:
-        from .html import render_html
-
-        Path(args.html).write_text(render_html(prof), encoding="utf-8")
-    print(render_text(prof))
-    if args.json:
-        print(f"\nJSON written to {args.json}")
-    if args.html:
-        print(f"HTML report written to {args.html}")
+    doc = run_doctor(repo, days=args.days, token_mode=args.tokens, model=args.model)
+    if args.rules or args.rules_dry_run:
+        code = _doctor_rules(doc, args)
+        if code is not None:
+            return code
+    out = Path(args.out)
+    out.mkdir(parents=True, exist_ok=True)
+    (out / "doctor.json").write_text(to_json(doc), encoding="utf-8")
+    (out / "doctor.html").write_text(render_doctor_html(doc), encoding="utf-8")
+    print(render_text(doc))
+    print(f"\nReport: {out / 'doctor.html'} (data in {out / 'doctor.json'})")
     return 0
+
+
+def _doctor_rules(doc, args: argparse.Namespace) -> int | None:
+    """Rule adherence. Returns an exit code to stop early, or None to carry on to the report."""
+    from .doctor import add_rules
+    from .llm import BackendError, pick_backend
+    from .rules import build_payload, candidate_rules, judge, pick_sessions, select_checkable, write_dry_run
+
+    candidates = candidate_rules(doc.profile)
+    sessions = pick_sessions(doc.activity, args.rules_sessions)
+    if not candidates or not sessions:
+        print("context-lens: rule check skipped: no startup rules or no sessions with tool calls", file=sys.stderr)
+        return None
+    if args.rules_dry_run:
+        path = Path(args.out) / "rules-payloads.jsonl"
+        payloads = [build_payload(a, candidates[: args.rules_max]) for a in sessions]
+        write_dry_run(candidates, payloads, path)
+        print(f"{1 + len(payloads)} requests written to {path}, redacted. Nothing was sent. "
+              "Read them, then run with --rules to send.")
+        return 0
+    try:
+        backend = pick_backend(args.backend, args.judge_model)
+    except BackendError as exc:
+        print(f"context-lens: {exc}", file=sys.stderr)
+        return 2
+    try:
+        rules = select_checkable(backend, candidates, args.rules_max)
+    except BackendError as exc:
+        print(f"context-lens: rule check skipped: {exc}", file=sys.stderr)
+        return None
+    if not rules:
+        print("context-lens: rule check skipped: none of your rules can be checked from command lines", file=sys.stderr)
+        return None
+    payloads = [build_payload(a, rules) for a in sessions]
+    sent = sum(len(p.prompt) for p in payloads)
+    print(f"Judging {len(rules)} of {len(candidates)} rules (the rest are about code content, which command lines "
+          f"don't show) against {len(payloads)} sessions on {args.judge_model} ({sent:,} redacted characters)…",
+          file=sys.stderr)
+    results, failed = judge(backend, rules, payloads, jobs=args.jobs)
+    u = backend.usage
+    cost = f", ${u.cost_usd:.2f}" if u.cost_usd else ""
+    note = f"; {failed} session(s) failed to judge" if failed else ""
+    add_rules(doc, results, len(candidates) - len(rules),
+              f"Rule check sent your rule text and {len(payloads) - failed} redacted session excerpts ({sent:,} characters: prompts and one "
+              f"line per tool call, no tool output or file contents) to {args.judge_model} via {backend.name} "
+              f"({u.calls} calls{cost}{note}). Everything else ran locally.")
+    return None
 
 
 def _compact(args: argparse.Namespace) -> int:
@@ -204,14 +248,22 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     sub = parser.add_subparsers(dest="command", required=True)
 
-    p = sub.add_parser("profile", help="measure what Claude Code loads at startup in a repo")
-    p.add_argument("path", nargs="?", default=".", help="repo or working directory (default: .)")
-    p.add_argument("--days", type=int, default=30, help="transcript window in days (default: 30)")
-    p.add_argument("--tokens", choices=["auto", "exact", "estimate"], default="auto")
-    p.add_argument("--model", default="claude-opus-5-5", help="model used for exact token counts")
-    p.add_argument("--json", metavar="FILE", help="also write the full profile as JSON")
-    p.add_argument("--html", metavar="FILE", help="also write a self-contained HTML report")
-    p.set_defaults(func=_profile)
+    d = sub.add_parser("doctor", help="check how efficiently Claude Code runs in a repo, and what to fix")
+    d.add_argument("path", nargs="?", default=".", help="repo or working directory (default: .)")
+    d.add_argument("--days", type=int, default=30, help="transcript window in days (default: 30)")
+    d.add_argument("--out", default=".context-lens", help="where doctor.html and doctor.json go (default: .context-lens)")
+    d.add_argument("--tokens", choices=["auto", "exact", "estimate"], default="auto")
+    d.add_argument("--model", default="claude-opus-5-5", help="model used for exact token counts")
+    d.add_argument("--rules", action="store_true",
+                   help="also judge past sessions against your rules (sends redacted excerpts to a model)")
+    d.add_argument("--rules-dry-run", action="store_true",
+                   help="write the exact redacted payloads --rules would send, and send nothing")
+    d.add_argument("--rules-max", type=int, default=20, help="most rules to judge, largest first (default: 20)")
+    d.add_argument("--rules-sessions", type=int, default=8, help="sessions to sample (default: 8)")
+    d.add_argument("--judge-model", default="claude-haiku-5-5", help="model that judges rule adherence")
+    d.add_argument("--backend", choices=["auto", "api", "claude-code"], default="auto", help="judge backend")
+    d.add_argument("--jobs", type=int, default=4, help="parallel judge calls (default: 4)")
+    d.set_defaults(func=_doctor)
 
     c = sub.add_parser("compact", help="propose a smaller startup CLAUDE.md with nothing lost")
     c.add_argument("path", nargs="?", default=".", help="repo root (default: .)")

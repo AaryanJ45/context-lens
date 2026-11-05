@@ -109,12 +109,12 @@ def read_session(path: Path) -> SessionUsage | None:
     )
 
 
-def sessions_for(repo: Path, days: int, projects_dir: Path | None = None) -> list[SessionUsage]:
-    """Sessions whose working directory is the repo or anything inside it."""
+def transcript_paths(repo: Path, days: int, projects_dir: Path | None = None) -> list[Path]:
+    """Transcripts whose working directory is the repo or anything inside it, newest last."""
     projects_dir = projects_dir or Path.home() / ".claude" / "projects"
     repo_s = str(repo.resolve())
     since = datetime.now(timezone.utc) - timedelta(days=days)
-    out: list[SessionUsage] = []
+    out: list[Path] = []
     if not projects_dir.is_dir():
         return out
     for path in projects_dir.glob("*/*.jsonl"):
@@ -124,8 +124,16 @@ def sessions_for(repo: Path, days: int, projects_dir: Path | None = None) -> lis
         except OSError:
             continue
         cwd = _first_cwd(path)
-        if not cwd or not (cwd == repo_s or cwd.startswith(repo_s + "/")):
-            continue
+        if cwd and (cwd == repo_s or cwd.startswith(repo_s + "/")):
+            out.append(path)
+    return sorted(out, key=lambda p: p.stat().st_mtime)
+
+
+def sessions_for(repo: Path, days: int, projects_dir: Path | None = None) -> list[SessionUsage]:
+    """Sessions whose working directory is the repo or anything inside it."""
+    since = datetime.now(timezone.utc) - timedelta(days=days)
+    out: list[SessionUsage] = []
+    for path in transcript_paths(repo, days, projects_dir):
         session = read_session(path)
         if session and session.started >= since:
             out.append(session)

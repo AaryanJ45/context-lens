@@ -1,8 +1,17 @@
 # context-lens
 
-Measure what Claude Code loads into context before you type a word, find the
-parts of your `CLAUDE.md` that aren't pulling their weight, and prove a slimmer
-version works just as well.
+A checkup for Claude Code. One command reads your instruction files and your
+past sessions and tells you how efficiently Claude runs in a repo: what it
+loads before you type a word, where sessions waste tokens, which tools and
+skills sit unused, and whether Claude actually follows your `CLAUDE.md`. Then
+it ranks what to fix. When the fix is a smaller `CLAUDE.md`, `compact` writes
+it and `eval` proves it still works.
+
+**Private by default.** Everything except the optional rule check runs on your
+machine and reads only local files. The rule check sends your rule text plus
+short, redacted excerpts (prompts and one line per tool call, never tool output
+or file contents) to a model, and `--rules-dry-run` shows you every byte first.
+See [Privacy](#privacy).
 
 Every Claude Code session starts by loading your instruction files (`CLAUDE.md`,
 imports, rules, auto memory, the skill listing) on top of its own system prompt.
@@ -60,7 +69,7 @@ then `/plugin install context-lens@context-lens`.)
 That adds three commands, each of which runs the CLI and walks you through the
 result:
 
-- `/context-lens:profile` — what your sessions load at startup and the most expensive sections
+- `/context-lens:doctor` — the checkup: startup context, wasted work, unused tools, session health, and (if you ask) rule adherence, with fixes ranked
 - `/context-lens:compact` — propose the slim layout, review what moved and anything lost, apply only when you say so
 - `/context-lens:eval` — a quick (20 sessions) or full (~180 sessions) before/after check
 
@@ -69,13 +78,33 @@ one, else `uvx` or `pipx`, else installs a private copy into
 `~/.cache/context-lens` on first use. Outputs go to `.context-lens/` in your
 repo; add it to `.gitignore`.
 
-## Profile a repo
+## Check a repo
 
 ```sh
-context-lens profile path/to/repo --html report.html --json profile.json
+context-lens doctor path/to/repo                  # local only, no model calls
+context-lens doctor path/to/repo --rules-dry-run  # write what --rules would send; send nothing
+context-lens doctor path/to/repo --rules          # also judge rule adherence (sends redacted excerpts)
 ```
 
-It reports:
+It prints one line per area and a ranked list of fixes, each with the evidence
+behind it, and writes `.context-lens/doctor.html` (the visual report) and
+`doctor.json`. Every number comes from your own files, over the last 30 days
+(`--days`):
+
+| Area | What it measures | Where from |
+|---|---|---|
+| **Startup context** | Tokens loaded before your first message, how much is instruction files, the costliest sections, stale paths | Instruction files + the first response of each session, as billed |
+| **Wasted work** | Tool outputs over 5k tokens that sit in context for the rest of the session, failed calls and the commands behind them, the same failing call repeated, re-reads of unchanged files | Tool calls and results in transcripts |
+| **Tools and MCP** | MCP servers configured but never called, skills listed every session but never used | `~/.claude.json`, `.mcp.json`, skill folders, transcripts |
+| **Session health** | Share of sessions that ran out of room and were compacted, peak context, context added per turn | Per-turn usage in transcripts |
+| **Rule adherence** (`--rules`) | Whether sessions followed each rule that a log of actions can show, with the line that proves it | A model reading redacted excerpts |
+
+Each area is marked *Good*, *Worth a look* or *Fix this* from plain thresholds
+(for example, instruction files over 25k tokens, or more than 10% of tool
+calls failing), and the report shows the numbers behind every mark. There is
+no single score: it would hide which number moved.
+
+### Startup context in detail
 
 - **Measured startup context** from your own Claude Code transcripts
   (`~/.claude/projects/*/*.jsonl`): the first response of each session carries
@@ -97,8 +126,49 @@ It reports:
 Token counts are estimates (marked `≈`) unless the `exact` extra is installed
 and credentials are available. Exact mode makes one `count_tokens` call per file.
 
-Everything runs locally. Transcripts and file contents never leave your machine
-except for the optional `count_tokens` calls.
+### Rule adherence
+
+Two steps, both part of `--rules`:
+
+1. **Pick the checkable rules.** The 80 largest startup sections go to the
+   model as rule text, and it keeps the ones a log of actions can show being
+   followed: which commands to run, git and branch workflow, tests, which tools
+   or skills to use, asking before an action. Rules about the *content* of code
+   (styling, which helper to use) are counted as "not judged" rather than
+   guessed at, because command lines don't show them.
+2. **Judge recent sessions.** About 8 recent sessions that did real work
+   (`--rules-sessions`), one call each, against up to 20 of those rules
+   (`--rules-max`). Each rule comes back *followed*, *violated* or *didn't come
+   up*, with the excerpt line that shows it.
+
+The judge defaults to `claude-haiku-5-5` (`--judge-model`) and uses the same
+backends as `compact`: your API key, or headless Claude Code on your
+subscription. A run over 8 sessions costs a few cents. Rules that never come up
+are candidates to load on demand; rules often violated are candidates to make
+shorter, more concrete, or enforced by a hook.
+
+## Privacy
+
+Transcripts hold code, commands and sometimes secrets, so context-lens treats
+them that way.
+
+- **`doctor` without `--rules` is local only.** It reads files on disk and
+  sends nothing anywhere (except `count_tokens` calls in exact mode, which carry
+  your instruction files, not transcripts). The report says
+  "Local only: nothing left this machine."
+- **`--rules` sends short excerpts, not transcripts.** Per sampled session: your
+  prompts and one line per tool call (the command, the file path, the search
+  pattern), each line capped at 300 characters, the session capped at 12,000.
+  Never sent: tool output, file contents, diffs, or Claude's replies.
+- **Secrets are redacted before anything is sent:** API keys (Anthropic,
+  OpenAI, GitHub, AWS, Slack, Stripe, and others), JWTs and bearer tokens,
+  passwords in URLs and `NAME=value` assignments, private keys, email
+  addresses, long random strings, and your home directory path. Redaction is a
+  best-effort filter, so:
+- **You can read every byte first.** `--rules-dry-run` writes the exact
+  requests to `.context-lens/rules-payloads.jsonl` and sends nothing.
+- **The report records what was sent:** how many excerpts, how many
+  characters, to which model, through which backend.
 
 ## Compact a CLAUDE.md
 
@@ -152,7 +222,7 @@ are listed in `.git/info/exclude`, so `git status` stays clean and nothing can
 be committed by accident. The original keeps updating with every pull; when it
 changes, `local status` exits 1 and the plugin's SessionStart hook tells the
 session to read the original for newer rules until you re-run compact.
-`profile` honours `claudeMdExcludes`, so it measures what you actually load.
+`doctor` honours `claudeMdExcludes`, so it measures what you actually load.
 
 ## Prove it still works
 
@@ -182,7 +252,8 @@ across variants and lists every failure with the files the session read.
 
 ## Roadmap
 
-- [x] `profile`: measure startup context and score sections
+- [x] `doctor`: one checkup across startup context, wasted work, tools and MCP,
+      session health and rule adherence, with fixes ranked (replaced `profile`)
 - [x] `compact`: propose a slim root `CLAUDE.md` plus on-demand rule files and
       doc pointers, with a coverage check that every original rule lands somewhere
 - [x] `eval`: run rule-probing tasks headlessly under both versions and compare

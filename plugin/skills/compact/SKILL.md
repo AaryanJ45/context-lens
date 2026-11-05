@@ -1,6 +1,6 @@
 ---
 name: compact
-description: Propose a smaller startup CLAUDE.md by moving directory-specific rules into path-scoped .claude/rules files that load only when matching files are touched, pointing to docs that already hold reference content, and cutting history, with a check that no path, command or identifier is lost. Use when the user wants to shrink, slim down, split or clean up their CLAUDE.md, or after /context-lens:profile shows it is large.
+description: Propose a smaller startup CLAUDE.md by moving directory-specific rules into path-scoped .claude/rules files that load only when matching files are touched, pointing to docs that already hold reference content, and cutting history, with a check that no path, command or identifier is lost. Use when the user wants to shrink, slim down, split or clean up their CLAUDE.md, or after /context-lens:doctor shows startup context is large.
 ---
 
 # Compact CLAUDE.md
