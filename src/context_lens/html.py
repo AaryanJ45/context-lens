@@ -121,6 +121,6 @@ def startup_html(p: Profile) -> str:
 <h2>Startup tokens per session</h2>{sessions_chart}
 <h2>CLAUDE.md size over its git history</h2>{growth}
 <h2>Compaction candidates</h2><ul>{bucket_html}</ul>
-<p class=muted>Heuristic signals. `context-lens compact` reviews every section before anything moves.</p>
+<p class=muted>Heuristic signals. `context-lens doctor --compact` reviews every section before anything moves.</p>
 <h2>Biggest sections loaded at startup</h2>
 <div class=wrap><table><thead><tr><th class=num>Tokens</th><th>Hint</th><th>Last edited</th><th>Section</th></tr></thead><tbody>{table}</tbody></table></div>"""

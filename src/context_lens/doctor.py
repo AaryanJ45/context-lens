@@ -109,7 +109,7 @@ def check_startup(p: Profile, acts: list[SessionActivity]) -> tuple[list[Finding
             f"Instruction files load {est}{files:,} tokens before your first message",
             f"They are written to the cache once and re-read on every turn{share}. "
             f"{est}{movable:,} tokens are history, copies of repo docs, or rules about one directory.",
-            "Run `context-lens compact` to move directory-specific rules into on-demand rule files and "
+            "Run `context-lens doctor --compact` to move directory-specific rules into on-demand rule files and "
             "replace copied docs with pointers; it checks that every path and command still lands somewhere.",
             movable or None,
             [f"{est}{s.tokens:,}  {s.hint:<14} {s.section.title}  ({_rel(f.file.path, p.repo)}:{s.section.start_line})"
@@ -140,6 +140,26 @@ def check_startup(p: Profile, acts: list[SessionActivity]) -> tuple[list[Finding
                 int(listing * len(unused) / len(skills)), unused[:TOP_EVIDENCE * 2],
             ))
     return out, metrics
+
+
+def check_local(repo: Path, metrics: dict[str, str]) -> list[Finding]:
+    """A compact applied with --apply-local goes stale when a pull changes the committed CLAUDE.md."""
+    from .local import status
+
+    st = status(repo)
+    if not st.active:
+        return []
+    metrics["local slim copy"] = "stale" if st.stale else "on, up to date"
+    if not st.stale:
+        return []
+    rel = _rel(st.original, repo)
+    return [Finding(
+        "Startup context", FIX, f"Your local slim copy is older than {rel}",
+        f"{rel} changed (probably a pull) since this checkout switched to the slim version, so sessions here "
+        "may be missing the newest rules.",
+        "Re-make it with `context-lens doctor --compact --apply-local`, or go back with "
+        "`context-lens doctor --undo-local`.",
+    )]
 
 
 # --- wasted work ---------------------------------------------------------------
@@ -307,7 +327,7 @@ def check_rules(results: list, uncheckable: int = 0) -> tuple[list[Finding], dic
             "Rule adherence", LOOK, f"{len(never)} rules never came up in the sampled sessions",
             "None of the sampled sessions did anything these rules govern. A rule that rarely applies still "
             "loads every session; with a small sample, read the list before acting on it.",
-            "Candidates to move into path-scoped rule files that load only when relevant (`context-lens compact`).",
+            "Candidates to move into path-scoped rule files that load only when relevant (`context-lens doctor --compact`).",
             tokens, [f"≈{r.rule.tokens:,}  {r.rule.title}  ({r.rule.source})" for r in never[:TOP_EVIDENCE]],
         ))
     return out, metrics
@@ -325,6 +345,7 @@ def run_doctor(repo: Path, days: int = 30, token_mode: str = "auto", model: str 
     metrics: dict[str, dict[str, str]] = {}
     f, metrics["Startup context"] = check_startup(profile, acts)
     findings += f
+    findings += check_local(repo, metrics["Startup context"])
     f, metrics["Wasted work"] = check_waste(acts)
     findings += f
     f, servers = check_tools(repo, acts, home)

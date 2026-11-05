@@ -12,4 +12,4 @@ if [ -f "$DIR/$ORIG" ]; then
   HAVE=$( (shasum -a 256 "$DIR/$ORIG" 2>/dev/null || sha256sum "$DIR/$ORIG") | cut -d' ' -f1)
 fi
 [ "$HAVE" = "$WANT" ] && exit 0
-echo "context-lens local mode: $ORIG changed since the slim CLAUDE.local.md was made, so it may be missing new rules. Read $ORIG for anything newer than CLAUDE.local.md before you start, and tell the user to re-run /context-lens:compact (local) or \`context-lens local off\`."
+echo "context-lens local mode: $ORIG changed since the slim CLAUDE.local.md was made, so it may be missing new rules. Read $ORIG for anything newer than CLAUDE.local.md before you start, and tell the user to run /context-lens:doctor to re-make it (\`context-lens doctor --compact --apply-local\`) or undo it (\`context-lens doctor --undo-local\`)."

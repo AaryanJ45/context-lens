@@ -30,7 +30,7 @@ from pathlib import Path
 LOCAL_RULES_DIR = ".claude/rules/context-lens-local"
 STATE_FILE = ".claude/context-lens-local.json"
 SETTINGS_FILE = ".claude/settings.local.json"
-EXCLUDE_HEADER = "# context-lens local mode (remove with `context-lens local off`)"
+EXCLUDE_HEADER = "# context-lens local mode (remove with `context-lens doctor --undo-local`)"
 MARKER = "<!-- context-lens local mode: generated from {src} (sha256 {sha}). Do not commit. -->"
 
 

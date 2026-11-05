@@ -4,8 +4,13 @@ A checkup for Claude Code. One command reads your instruction files and your
 past sessions and tells you how efficiently Claude runs in a repo: what it
 loads before you type a word, where sessions waste tokens, which tools and
 skills sit unused, and whether Claude actually follows your `CLAUDE.md`. Then
-it ranks what to fix. When the fix is a smaller `CLAUDE.md`, `compact` writes
-it and `eval` proves it still works.
+it ranks what to fix, and opens a visual report in your browser. When the fix
+is a smaller `CLAUDE.md`, the same command writes it (`--compact`) and proves
+it still works (`--verify`).
+
+```sh
+context-lens doctor          # or just: context-lens
+```
 
 **Private by default.** Everything except the optional rule check runs on your
 machine and reads only local files. The rule check sends your rule text plus
@@ -24,7 +29,7 @@ Run on a production repo whose root `CLAUDE.md` had grown past 100 KB:
 `compact` proposed a slim root file plus five path-scoped rule files, and
 `eval` ran 29 rule probes × 3 runs × 2 variants (174 headless sessions on
 Sonnet 5.5). Rule names are withheld; the chart below is generated with
-`context-lens eval report --anonymize --summary-only`.
+`context-lens doctor --verify-report --anonymize --summary-only`.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/eval-dark.png">
@@ -66,29 +71,40 @@ The repo is also a Claude Code plugin marketplace. In any session:
 (On Claude Code before 2.1.275: `/plugin marketplace add AaryanJ45/context-lens`,
 then `/plugin install context-lens@context-lens`.)
 
-That adds three commands, each of which runs the CLI and walks you through the
-result:
-
-- `/context-lens:doctor` — the checkup: startup context, wasted work, unused tools, session health, and (if you ask) rule adherence, with fixes ranked
-- `/context-lens:compact` — propose the slim layout, review what moved and anything lost, apply only when you say so
-- `/context-lens:eval` — a quick (20 sessions) or full (~180 sessions) before/after check
+That adds one command, `/context-lens:doctor`. It runs the checkup, opens the
+report in your browser, explains the top fixes, and offers each next step (the
+rule check, shrinking `CLAUDE.md`, verifying it) when it fits. Anything that
+costs money or changes files is confirmed with you first.
 
 The plugin needs Python 3.10+. It uses an installed `context-lens` if there is
 one, else `uvx` or `pipx`, else installs a private copy into
 `~/.cache/context-lens` on first use. Outputs go to `.context-lens/` in your
 repo; add it to `.gitignore`.
 
-## Check a repo
+## One command
+
+Everything is `context-lens doctor` (or plain `context-lens`) plus a flag:
 
 ```sh
-context-lens doctor path/to/repo                  # local only, no model calls
-context-lens doctor path/to/repo --rules-dry-run  # write what --rules would send; send nothing
-context-lens doctor path/to/repo --rules          # also judge rule adherence (sends redacted excerpts)
+context-lens doctor                     # checkup: local only, no model calls
+context-lens doctor --rules-dry-run     # write what --rules would send; send nothing
+context-lens doctor --rules             # + did past sessions follow your rules
+context-lens doctor --compact           # propose a slim CLAUDE.md (writes nothing into the repo)
+context-lens doctor --apply-local       # use the proposal in this checkout only
+context-lens doctor --apply             # write the proposal into the repo
+context-lens doctor --undo-local        # back to the committed CLAUDE.md
+context-lens doctor --verify quick      # prove the proposal is still followed (or: full)
 ```
 
+Pass a path to check a repo other than the current directory. Everything is
+written to `.context-lens/` in the repo; add it to `.gitignore`.
+
+## The checkup
+
 It prints one line per area and a ranked list of fixes, each with the evidence
-behind it, and writes `.context-lens/doctor.html` (the visual report) and
-`doctor.json`. Every number comes from your own files, over the last 30 days
+behind it, then **opens `.context-lens/doctor.html` in your browser** (when run
+in a terminal; `--open` / `--no-open` override) and prints its `file://` link.
+`doctor.json` has the same data for scripts. Every number comes from your own files, over the last 30 days
 (`--days`):
 
 | Area | What it measures | Where from |
@@ -170,12 +186,12 @@ them that way.
 - **The report records what was sent:** how many excerpts, how many
   characters, to which model, through which backend.
 
-## Compact a CLAUDE.md
+## Shrink CLAUDE.md: `--compact`
 
 ```sh
-context-lens compact path/to/repo                       # proposes, writes nothing into the repo
-context-lens compact path/to/repo --backend claude-code # bill the model calls to your Claude subscription
-context-lens compact path/to/repo --from-plan context-lens-out/plan.json --apply
+context-lens doctor --compact                          # proposes, writes nothing into the repo
+context-lens doctor --compact --backend claude-code    # bill the model calls to your Claude subscription
+context-lens doctor --apply                            # write the saved proposal into the repo
 ```
 
 Three steps, each one checkable:
@@ -193,10 +209,11 @@ Three steps, each one checkable:
    Sections with unexplained losses are asked again once; anything still
    missing is listed under "Lost" in the report.
 
-Output goes to `context-lens-out/`: the proposed files under `files/`,
-`plan.json` (every decision, editable, re-assemble with `--from-plan`) and
-`report.md` (before/after tokens, coverage, every decision with its reason).
-`--apply` writes the files into the repo; review the diff in git.
+Output goes to `.context-lens/compact/`: the proposed files under `files/`,
+`plan.json` (every decision, editable) and `report.md` (before/after tokens,
+coverage, every decision with its reason). `--apply` and `--apply-local`
+re-assemble from `plan.json` with no model calls, so your edits to it are
+picked up. `--apply` writes the files into the repo; review the diff in git.
 
 **Backends.** `--backend api` uses the Anthropic SDK and `ANTHROPIC_API_KEY`
 (install the `exact` extra). `--backend claude-code` runs headless `claude -p`
@@ -210,9 +227,9 @@ Not ready to change the `CLAUDE.md` your team pulls? `--apply-local` switches
 just your checkout to the slim version and leaves the committed file alone:
 
 ```sh
-context-lens compact . --from-plan context-lens-out/plan.json --apply-local
-context-lens local status   # on/off, and whether a pull has made the slim copy stale
-context-lens local off      # back to the committed CLAUDE.md, every local file removed
+context-lens doctor --apply-local    # this checkout loads the slim version from the next session
+context-lens doctor --local-status   # on/off, and whether a pull has made the slim copy stale
+context-lens doctor --undo-local     # back to the committed CLAUDE.md, every local file removed
 ```
 
 The slim root goes in `CLAUDE.local.md`, the rule files in
@@ -220,16 +237,21 @@ The slim root goes in `CLAUDE.local.md`, the rule files in
 `claudeMdExcludes` entry so Claude Code skips the long original. All of them
 are listed in `.git/info/exclude`, so `git status` stays clean and nothing can
 be committed by accident. The original keeps updating with every pull; when it
-changes, `local status` exits 1 and the plugin's SessionStart hook tells the
-session to read the original for newer rules until you re-run compact.
+changes, `--local-status` exits 1, the checkup flags it as a fix, and the
+plugin's SessionStart hook tells the session to read the original for newer
+rules until you re-make it.
 `doctor` honours `claudeMdExcludes`, so it measures what you actually load.
 
-## Prove it still works
+## Prove it still works: `--verify`
 
 ```sh
-context-lens eval gen path/to/repo --plan context-lens-out/plan.json --n 30 --out probes.json
-context-lens eval run path/to/repo --probes probes.json --after context-lens-out/files
+context-lens doctor --verify quick   # 10 probes × 1 run, ~20 sessions, ~10 min
+context-lens doctor --verify full    # 30 probes × 3 runs, ~180 sessions, ~1 hour
+context-lens doctor --verify-report  # rebuild the report from saved or partial results
 ```
+
+Run it before committing an `--apply`: it compares the committed `CLAUDE.md`
+against the proposal.
 
 1. **Probes.** For a sample of sections, a model writes a realistic task an
    agent only gets right by following that section's rule, naming real files,
@@ -248,15 +270,19 @@ context-lens eval run path/to/repo --probes probes.json --after context-lens-out
 
 The report gives pass rate, startup tokens (the first turn's input, as
 billed), total tokens, cost and turns per variant, then pairs each probe
-across variants and lists every failure with the files the session read.
+across variants and lists every failure with the files the session read, and
+opens in your browser like the checkup. Results are saved as each session
+finishes, so a stopped run keeps what it paid for. `--anonymize` on
+`--verify-report` drops every rule's text for a chart you can share.
 
 ## Roadmap
 
-- [x] `doctor`: one checkup across startup context, wasted work, tools and MCP,
-      session health and rule adherence, with fixes ranked (replaced `profile`)
-- [x] `compact`: propose a slim root `CLAUDE.md` plus on-demand rule files and
+- [x] One command, `doctor`: a checkup across startup context, wasted work,
+      tools and MCP, session health and rule adherence, with fixes ranked and a
+      visual report (replaced `profile`, `compact`, `eval` and `local`)
+- [x] `--compact`: propose a slim root `CLAUDE.md` plus on-demand rule files and
       doc pointers, with a coverage check that every original rule lands somewhere
-- [x] `eval`: run rule-probing tasks headlessly under both versions and compare
+- [x] `--verify`: run rule-probing tasks headlessly under both versions and compare
       startup tokens, cost and rule pass rate
 - [x] Claude Code plugin wrapping the CLI
 
